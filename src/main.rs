@@ -1,12 +1,12 @@
 mod bbs_sign;
 mod tbbs_sign;
+mod ot;
 
 use std::{
     fs,
     io::{prelude::*, BufReader},
     net::{TcpListener, TcpStream},
 };
-use std::time::Duration;
 
 const HTML_DIR: &str = "html";
 

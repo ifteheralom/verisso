@@ -1,14 +1,12 @@
-use ark_serialize::Compress;
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 use bbs_plus::prelude::{Signature23G1};
 use bbs_plus::setup::{KeypairG2, SignatureParams23G1};
 use blake2::Blake2b512;
 use rand::prelude::*;
 use ark_bls12_381::{Bls12_381, Fr};
-use ark_serialize::CanonicalSerialize;
 use ark_std::{rand::{rngs::StdRng, SeedableRng}, UniformRand};
-use bbs_plus::proof_23::{PoKOfSignature23G1Proof, PoKOfSignature23G1Protocol};
+use bbs_plus::proof_23::{PoKOfSignature23G1Protocol};
 use dock_crypto_utils::{signature::{MessageOrBlinding}};
 use schnorr_pok::compute_random_oracle_challenge;
 
