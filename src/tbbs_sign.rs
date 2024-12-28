@@ -14,7 +14,11 @@ use oblivious_transfer_protocols::ot_based_multiplication::{
 };
 use oblivious_transfer_protocols::*;
 use secret_sharing_and_dkg::shamir_ss::deal_random_secret;
-use crate::ot::do_pairwise_base_ot;
+use crate::ot::*;
+
+const BASE_OT_KEY_SIZE: u16 = 128;
+const KAPPA: u16 = 256;
+const STATISTICAL_SECURITY_PARAMETER: u16 = 80;
 
 pub fn trusted_party_keygen<R: RngCore, F: PrimeField>(
     rng: &mut R,
@@ -27,9 +31,6 @@ pub fn trusted_party_keygen<R: RngCore, F: PrimeField>(
 
 fn signing() {
     let mut rng = StdRng::seed_from_u64(0u64);
-    const BASE_OT_KEY_SIZE: u16 = 128;
-    const KAPPA: u16 = 256;
-    const STATISTICAL_SECURITY_PARAMETER: u16 = 80;
     let ote_params = MultiplicationOTEParams::<KAPPA, STATISTICAL_SECURITY_PARAMETER> {};
     let gadget_vector = GadgetVector::<Fr, KAPPA, STATISTICAL_SECURITY_PARAMETER>::new::<
         Blake2b512,

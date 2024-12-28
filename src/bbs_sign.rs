@@ -1,59 +1,97 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::{Instant};
-use bbs_plus::prelude::{Signature23G1};
-use bbs_plus::setup::{KeypairG2, SignatureParams23G1};
+use bbs_plus::prelude::{PublicKeyG2, Signature23G1};
+use bbs_plus::setup::{KeypairG2, SecretKey, SignatureParams23G1};
 use blake2::Blake2b512;
-use rand::prelude::*;
 use ark_bls12_381::{Bls12_381, Fr};
-use ark_std::{rand::{rngs::StdRng, SeedableRng}, UniformRand};
+use ark_std::{rand::{rngs::StdRng, SeedableRng}};
 use bbs_plus::proof_23::{PoKOfSignature23G1Protocol};
 use dock_crypto_utils::{signature::{MessageOrBlinding}};
 use schnorr_pok::compute_random_oracle_challenge;
-
-fn measure_time<T, F>(operation: F) -> (T, std::time::Duration)
-    where
-        F: FnOnce() -> T,
-{
-    let start = Instant::now();
-    let result = operation();
-    let elapsed = start.elapsed();
-    (result, elapsed)
-}
+use crate::exp_utils::*;
 
 pub fn setup_keys<R: rand::RngCore>(
     rng: &mut R,
     params: &SignatureParams23G1<Bls12_381>
 ) -> KeypairG2<Bls12_381> {
-    let keypair = KeypairG2::<Bls12_381>::generate_using_rng_and_bbs23_params(rng, &params);
-    return keypair;
+    return KeypairG2::<Bls12_381>::generate_using_rng_and_bbs23_params(
+        rng,
+        &params
+    );
 }
 
-pub fn setup_messages<R: rand::RngCore>(
-    rng: &mut R,
-    message_count: u32
-) -> Vec<Fr> {
-    let messages: Vec<Fr> = (0..message_count).map(|_| {
-        Fr::rand(rng)
-    }).collect();
-    return messages;
+pub fn sign<R: rand::RngCore>(
+    messages: Vec<Fr>,
+    secret_key: SecretKey<Fr>,
+    params: SignatureParams23G1<Bls12_381>,
+    rng: &mut R
+) -> Signature23G1<Bls12_381> {
+    return Signature23G1::<Bls12_381>::new(
+        rng,
+        &messages,
+        &secret_key,
+        &params
+    ).unwrap();
 }
 
-pub fn sig_setup<R: RngCore>(
-    rng: &mut R,
-    message_count: u32,
-) -> (
-    Vec<Fr>,
-    SignatureParams23G1<Bls12_381>,
-    KeypairG2<Bls12_381>,
+pub fn verify_sign(
+    messages: Vec<Fr>,
+    signature: Signature23G1<Bls12_381>,
+    public_key: PublicKeyG2<Bls12_381>,
+    params: SignatureParams23G1<Bls12_381>
 ) {
-    let messages: Vec<Fr> = (0..message_count).map(|_| Fr::rand(rng)).collect();
-    let params = SignatureParams23G1::<Bls12_381>::generate_using_rng(rng, message_count);
-    let keypair = KeypairG2::<Bls12_381>::generate_using_rng_and_bbs23_params(rng, &params);
-    // let sig = Signature23G1::<Bls12_381>::new(rng, &messages, &keypair.secret_key, &params).unwrap();
-    (messages, params, keypair)
+    return signature.verify(
+        &messages,
+        public_key.clone(),
+        params.clone()
+    ).unwrap();
 }
 
-pub fn bbs_sign() {
+pub fn make_proof<R: rand::RngCore>(
+    messages: Vec<Fr>,
+    revealed_msgs: BTreeMap<usize, Fr>,
+    revealed_indices: BTreeSet<usize>,
+    signature: Signature23G1<Bls12_381>,
+    params: SignatureParams23G1<Bls12_381>,
+    rng: &mut R
+) -> bbs_plus::proof_23::PoKOfSignature23G1Proof<Bls12_381> {
+    let pok = PoKOfSignature23G1Protocol::init(
+        rng,
+        None,
+        None,
+        &signature,
+        &params,
+        messages.iter().enumerate().map(|(idx, msg)| {
+            if revealed_indices.contains(&idx) {
+                MessageOrBlinding::RevealMessage(msg)
+            } else {
+                MessageOrBlinding::BlindMessageRandomly(msg)
+            }
+        }),
+    ).unwrap();
+
+    let mut chal_bytes_prover = vec![];
+    pok.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_prover).unwrap();
+    let challenge_prover = compute_random_oracle_challenge::<Fr, Blake2b512>(&chal_bytes_prover);
+    let res: bbs_plus::proof_23::PoKOfSignature23G1Proof<Bls12_381> = pok.gen_proof(&challenge_prover).unwrap();
+    return res;
+}
+
+pub fn verify_proof(
+    proof: bbs_plus::proof_23::PoKOfSignature23G1Proof<Bls12_381>,
+    revealed_msgs: BTreeMap<usize, Fr>,
+    challenge_verifier: Fr,
+    public_key: PublicKeyG2<Bls12_381>,
+    params: SignatureParams23G1<Bls12_381>
+) {
+    return proof.verify(
+        &revealed_msgs,
+        &challenge_verifier,
+        public_key.clone(),
+        params.clone(),
+    ).unwrap();
+}
+
+pub fn signing() {
     let message_count = 20;
     let mut rng = StdRng::seed_from_u64(0u64);
     let params = SignatureParams23G1::<Bls12_381>::generate_using_rng(&mut rng, message_count);
@@ -113,7 +151,7 @@ pub fn bbs_sign() {
         return res;
     });
 
-    let public_key = &keypair.public_key;
+    let public_key: &PublicKeyG2<Bls12_381> = &keypair.public_key;
     let mut chal_bytes_verifier = vec![];
     proof.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_verifier).unwrap();
     let challenge_verifier = compute_random_oracle_challenge::<Fr, Blake2b512>(&chal_bytes_verifier);
