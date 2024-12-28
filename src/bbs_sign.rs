@@ -91,7 +91,7 @@ pub fn verify_proof(
     ).unwrap();
 }
 
-pub fn signing() {
+pub fn test_signing() {
     let message_count = 20;
     let mut rng = StdRng::seed_from_u64(0u64);
     let params = SignatureParams23G1::<Bls12_381>::generate_using_rng(&mut rng, message_count);
