@@ -1,9 +1,46 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::Instant;
 use ark_bls12_381::{Bls12_381, Fr};
 use ark_std::UniformRand;
 use bbs_plus::prelude::{KeypairG2, SignatureParams23G1};
 use rand::RngCore;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+
+// Struct to manage the timer
+pub struct Timer {
+    start_time: Arc<Mutex<Option<Instant>>>,
+}
+
+impl Timer {
+    // Creates a new timer
+    pub fn new() -> Self {
+        Timer {
+            start_time: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    // Starts the timer in a separate thread
+    pub fn start(&self) {
+        let start_time = Arc::clone(&self.start_time);
+        thread::spawn(move || {
+            let mut time = start_time.lock().unwrap();
+            *time = Some(Instant::now());
+        });
+    }
+
+    // Stops the timer and returns the elapsed time
+    pub fn stop(&self) -> Option<Duration> {
+        let mut time = self.start_time.lock().unwrap();
+        if let Some(start_time) = *time {
+            let elapsed = start_time.elapsed();
+            *time = None; // Reset the timer
+            Some(elapsed)
+        } else {
+            None // Timer was not started
+        }
+    }
+}
 
 pub fn measure_time<T, F>(operation: F) -> (T, std::time::Duration)
     where

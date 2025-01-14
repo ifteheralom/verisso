@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::{Duration, Instant};
 use bbs_plus::prelude::{PublicKeyG2, Signature23G1};
 use bbs_plus::setup::{KeypairG2, SecretKey, SignatureParams23G1};
 use blake2::Blake2b512;
@@ -91,7 +92,7 @@ pub fn verify_proof(
     ).unwrap();
 }
 
-pub fn test_signing() {
+pub fn test_signing() -> u128 {
     let message_count = 20;
     let mut rng = StdRng::seed_from_u64(0u64);
     let params = SignatureParams23G1::<Bls12_381>::generate_using_rng(&mut rng, message_count);
@@ -100,22 +101,32 @@ pub fn test_signing() {
     let messages = setup_messages(&mut rng, message_count);
     // let (messages, params, keypair) = sig_setup(&mut rng, message_count);
 
-    let (sig, sign_create_duration) = measure_time(|| {
-        let res = Signature23G1::<Bls12_381>::new(&mut rng, &messages, &keypair.secret_key, &params).unwrap();
-        return res;
-    });
+    // For experimental purposes
+    let mTimer = Timer::new();
 
-    let (res, sign_verif_duration) = measure_time(|| {
-        sig.verify(&messages, keypair.public_key.clone(), params.clone()).unwrap()
-    });
+    mTimer.start();
+    let sig = Signature23G1::<Bls12_381>::new(&mut rng, &messages, &keypair.secret_key, &params).unwrap();
+    let elapsed = mTimer.stop();
+
+    sig.verify(&messages, keypair.public_key.clone(), params.clone()).unwrap();
+
+    // let (sig, sign_create_duration) = measure_time(|| {
+    //     let res = Signature23G1::<Bls12_381>::new(&mut rng, &messages, &keypair.secret_key, &params).unwrap();
+    //     return res;
+    // });
+    // println!("{:?}", sign_create_duration);
+
+    // let (res, sign_verif_duration) = measure_time(|| {
+    //     sig.verify(&messages, keypair.public_key.clone(), params.clone()).unwrap()
+    // });
 
 
-    println!(
-        "Time to sign {} messages: {:?} :: verify: {:?}",
-        message_count,
-        sign_create_duration,
-        sign_verif_duration
-    );
+    // println!(
+    //     "Time to sign {} messages: {:?} :: verify: {:?}",
+    //     message_count,
+    //     sign_create_duration,
+    //     sign_verif_duration
+    // );
 
     // let fr_byte_size = Fr::default().serialized_size(Compress::No);
     // println!("Size of each Fr element: {} bytes", fr_byte_size);
@@ -128,43 +139,39 @@ pub fn test_signing() {
         revealed_msgs.insert(*i, messages[*i]);
     }
 
-    let (proof, proof_create_duration) = measure_time(|| {
-        let pok = PoKOfSignature23G1Protocol::init(
-            &mut rng,
-            None,
-            None,
-            &sig,
-            &params,
-            messages.iter().enumerate().map(|(idx, msg)| {
-                if revealed_indices.contains(&idx) {
-                    MessageOrBlinding::RevealMessage(msg)
-                } else {
-                    MessageOrBlinding::BlindMessageRandomly(msg)
-                }
-            }),
-        ).unwrap();
+    let pok = PoKOfSignature23G1Protocol::init(
+        &mut rng,
+        None,
+        None,
+        &sig,
+        &params,
+        messages.iter().enumerate().map(|(idx, msg)| {
+            if revealed_indices.contains(&idx) {
+                MessageOrBlinding::RevealMessage(msg)
+            } else {
+                MessageOrBlinding::BlindMessageRandomly(msg)
+            }
+        }),
+    ).unwrap();
 
-        let mut chal_bytes_prover = vec![];
-        pok.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_prover).unwrap();
-        let challenge_prover = compute_random_oracle_challenge::<Fr, Blake2b512>(&chal_bytes_prover);
-        let res = pok.gen_proof(&challenge_prover).unwrap();
-        return res;
-    });
+    let mut chal_bytes_prover = vec![];
+    pok.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_prover).unwrap();
+    let challenge_prover = compute_random_oracle_challenge::<Fr, Blake2b512>(&chal_bytes_prover);
+    let proof = pok.gen_proof(&challenge_prover).unwrap();
 
     let public_key: &PublicKeyG2<Bls12_381> = &keypair.public_key;
     let mut chal_bytes_verifier = vec![];
     proof.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_verifier).unwrap();
     let challenge_verifier = compute_random_oracle_challenge::<Fr, Blake2b512>(&chal_bytes_verifier);
 
-    let (res, proof_verif_duration) = measure_time(|| {
-        proof.verify(&revealed_msgs, &challenge_verifier, public_key.clone(), params.clone(),
-        ).unwrap();
-    });
+    proof.verify(&revealed_msgs, &challenge_verifier, public_key.clone(), params.clone()).unwrap();
 
-    println!(
-        "Time to create proof revealing {} messages is {:?} :: verify: {:?}",
-        revealed_indices.len(),
-        proof_create_duration,
-        proof_verif_duration
-    );
+    // println!(
+    //     "Time to create proof revealing {} messages is {:?} :: verify: {:?}",
+    //     revealed_indices.len(),
+    //     proof_create_duration,
+    //     proof_verif_duration
+    // );
+
+    return elapsed.unwrap().as_millis();
 }

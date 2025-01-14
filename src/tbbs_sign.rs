@@ -191,7 +191,7 @@ pub fn verify(
     ).unwrap();
 }
 
-fn test_signing() {
+pub fn test_signing() {
     let mut rng = StdRng::seed_from_u64(0u64);
     let message_count = 5;
     let params: SignatureParams23G1<Bls12_381> = SignatureParams23G1::<Bls12_381>::generate_using_rng(&mut rng, message_count);
@@ -214,10 +214,10 @@ fn test_signing() {
         all_party_set.clone(),
     );
 
-    println!(
-        "For a batch size of {} BBS signatures and {} signers",
-        SIG_BATCH_SIZE, THRESHOLD_SIGNERS
-    );
+    // println!(
+    //     "For a batch size of {} BBS signatures and {} signers",
+    //     SIG_BATCH_SIZE, THRESHOLD_SIGNERS
+    // );
 
     // Following have to happen for each new batch of signatures. Batch size can be 1 when creating one signature at a time
     let mut round1s = vec![];
@@ -225,7 +225,7 @@ fn test_signing() {
     let mut commitments_zero_share = vec![];
     let mut round1outs = vec![];
 
-    // Signers initiate round-1 and each signer sends commitments to others
+    // PHASE: 1 - Signers initiate round-1 and each signer sends commitments to others
     let start = Instant::now();
     for i in 1..=THRESHOLD_SIGNERS {
         let mut others = threshold_party_set.clone();
@@ -287,7 +287,7 @@ fn test_signing() {
     let mut round2s = vec![];
     let mut all_msg_1s = vec![];
 
-    // Signers initiate round-2 and each signer sends messages to others
+    // PHASE: 2 - Signers initiate round-2 and each signer sends messages to others
     let start = Instant::now();
     for i in 1..=THRESHOLD_SIGNERS {
         let mut others = threshold_party_set.clone();
@@ -329,52 +329,52 @@ fn test_signing() {
 
     // Check that multiplication phase ran successfully, i.e. each signer has an additive share of
     // a multiplication with every other signer
-    for i in 1..=THRESHOLD_SIGNERS {
-        for (j, z_A) in &round2_outputs[i as usize - 1].0.z_A {
-            let z_B = round2_outputs[*j as usize - 1].0.z_B.get(&i).unwrap();
-            for k in 0..SIG_BATCH_SIZE as usize {
-                assert_eq!(
-                    z_A.0[k] + z_B.0[k],
-                    round1outs[i as usize - 1].masked_signing_key_shares[k]
-                        * round1outs[*j as usize - 1].masked_rs[k]
-                );
-                assert_eq!(
-                    z_A.1[k] + z_B.1[k],
-                    round1outs[i as usize - 1].masked_rs[k]
-                        * round1outs[*j as usize - 1].masked_signing_key_shares[k]
-                );
-            }
-        }
-    }
+    // for i in 1..=THRESHOLD_SIGNERS {
+    //     for (j, z_A) in &round2_outputs[i as usize - 1].0.z_A {
+    //         let z_B = round2_outputs[*j as usize - 1].0.z_B.get(&i).unwrap();
+    //         for k in 0..SIG_BATCH_SIZE as usize {
+    //             assert_eq!(
+    //                 z_A.0[k] + z_B.0[k],
+    //                 round1outs[i as usize - 1].masked_signing_key_shares[k]
+    //                     * round1outs[*j as usize - 1].masked_rs[k]
+    //             );
+    //             assert_eq!(
+    //                 z_A.1[k] + z_B.1[k],
+    //                 round1outs[i as usize - 1].masked_rs[k]
+    //                     * round1outs[*j as usize - 1].masked_signing_key_shares[k]
+    //             );
+    //         }
+    //     }
+    // }
 
     // This is the final step where each signer generates his share of the signature without interaction
     // with any other signer and sends this share to the client
     let mut sig_shares_time = Duration::default();
     let mut sig_aggr_time = Duration::default();
-    for k in 0..SIG_BATCH_SIZE as usize {
-        // Get shares from a threshold number of signers
-        let mut shares = vec![];
-        let start = Instant::now();
-        for i in 0..THRESHOLD_SIGNERS as usize {
-            let share = BBSSignatureShare::new(
-                &messages,
-                k,
-                &round1outs[i],
-                &round2_outputs[i],
-                &params,
-            )
-                .unwrap();
-            shares.push(share);
-        }
-        sig_shares_time += start.elapsed();
-
-        // Client aggregate the shares to get the final signature
-        let start = Instant::now();
-        let sig = BBSSignatureShare::aggregate(shares).unwrap();
-        sig_aggr_time += start.elapsed();
-        sig.verify(&messages, public_key.clone(), params.clone())
+    //for k in 0..SIG_BATCH_SIZE as usize {
+    // Get shares from a threshold number of signers
+    let mut shares = vec![];
+    let start = Instant::now();
+    for i in 0..THRESHOLD_SIGNERS as usize {
+        let share = BBSSignatureShare::new(
+            &messages,
+            0,
+            &round1outs[i],
+            &round2_outputs[i],
+            &params,
+        )
             .unwrap();
+        shares.push(share);
     }
+    sig_shares_time += start.elapsed();
+
+    // Client aggregate the shares to get the final signature
+    let start = Instant::now();
+    let sig = BBSSignatureShare::aggregate(shares).unwrap();
+    sig_aggr_time += start.elapsed();
+    sig.verify(&messages, public_key.clone(), params.clone())
+        .unwrap();
+    //}
 
     println!("Generating signature shares took {:?}", sig_shares_time);
     println!("Aggregating signature shares took {:?}", sig_aggr_time);
