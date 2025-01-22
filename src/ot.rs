@@ -1,4 +1,4 @@
-// Ref: https://github.com/docknetwork/crypto/blob/main/test_utils/src/ot.rs
+// Ref: https://github.com/docknetwork/crypto
 
 use ark_bls12_381::Bls12_381;
 use ark_ec::pairing::Pairing;

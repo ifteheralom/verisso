@@ -7,6 +7,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+pub fn get_as_millis(duration: Duration) -> f64 {
+    return duration.as_secs_f64() * 1000.0;
+}
+
 // Struct to manage the timer
 pub struct Timer {
     start_time: Arc<Mutex<Option<Instant>>>,

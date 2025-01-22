@@ -1,3 +1,5 @@
+// Ref: https://github.com/docknetwork/crypto/tree/main/bbs_plus
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 use bbs_plus::prelude::{PublicKeyG2, Signature23G1};
@@ -92,8 +94,8 @@ pub fn verify_proof(
     ).unwrap();
 }
 
-pub fn test_signing() -> u128 {
-    let message_count = 20;
+pub fn test_credential() {
+    let message_count = 15;
     let mut rng = StdRng::seed_from_u64(0u64);
     let params = SignatureParams23G1::<Bls12_381>::generate_using_rng(&mut rng, message_count);
 
@@ -103,30 +105,23 @@ pub fn test_signing() -> u128 {
 
     // For experimental purposes
     let mTimer = Timer::new();
+    let mut elapsed: Option<Duration>;
+    let mut vc_issue_time: f64;
+    let mut vc_verify_time: f64;
+    let mut proof_gen_time: f64;
+    let mut proof_verify_time: f64;
+    //
 
     mTimer.start();
     let sig = Signature23G1::<Bls12_381>::new(&mut rng, &messages, &keypair.secret_key, &params).unwrap();
-    let elapsed = mTimer.stop();
+    elapsed = mTimer.stop();
+    vc_issue_time = get_as_millis(elapsed.unwrap());
 
+
+    mTimer.start();
     sig.verify(&messages, keypair.public_key.clone(), params.clone()).unwrap();
-
-    // let (sig, sign_create_duration) = measure_time(|| {
-    //     let res = Signature23G1::<Bls12_381>::new(&mut rng, &messages, &keypair.secret_key, &params).unwrap();
-    //     return res;
-    // });
-    // println!("{:?}", sign_create_duration);
-
-    // let (res, sign_verif_duration) = measure_time(|| {
-    //     sig.verify(&messages, keypair.public_key.clone(), params.clone()).unwrap()
-    // });
-
-
-    // println!(
-    //     "Time to sign {} messages: {:?} :: verify: {:?}",
-    //     message_count,
-    //     sign_create_duration,
-    //     sign_verif_duration
-    // );
+    elapsed = mTimer.stop();
+    vc_verify_time = get_as_millis(elapsed.unwrap());
 
     // let fr_byte_size = Fr::default().serialized_size(Compress::No);
     // println!("Size of each Fr element: {} bytes", fr_byte_size);
@@ -134,11 +129,13 @@ pub fn test_signing() -> u128 {
     let mut revealed_indices = BTreeSet::new();
     revealed_indices.insert(0);
     revealed_indices.insert(2);
+    revealed_indices.insert(4);
     let mut revealed_msgs = BTreeMap::new();
     for i in revealed_indices.iter() {
         revealed_msgs.insert(*i, messages[*i]);
     }
 
+    mTimer.start();
     let pok = PoKOfSignature23G1Protocol::init(
         &mut rng,
         None,
@@ -158,20 +155,32 @@ pub fn test_signing() -> u128 {
     pok.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_prover).unwrap();
     let challenge_prover = compute_random_oracle_challenge::<Fr, Blake2b512>(&chal_bytes_prover);
     let proof = pok.gen_proof(&challenge_prover).unwrap();
+    elapsed = mTimer.stop();
+    proof_gen_time = get_as_millis(elapsed.unwrap());
 
     let public_key: &PublicKeyG2<Bls12_381> = &keypair.public_key;
     let mut chal_bytes_verifier = vec![];
     proof.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_verifier).unwrap();
     let challenge_verifier = compute_random_oracle_challenge::<Fr, Blake2b512>(&chal_bytes_verifier);
 
+    mTimer.start();
     proof.verify(&revealed_msgs, &challenge_verifier, public_key.clone(), params.clone()).unwrap();
+    elapsed = mTimer.stop();
+    proof_verify_time = get_as_millis(elapsed.unwrap());
 
-    // println!(
-    //     "Time to create proof revealing {} messages is {:?} :: verify: {:?}",
-    //     revealed_indices.len(),
-    //     proof_create_duration,
-    //     proof_verif_duration
-    // );
-
-    return elapsed.unwrap().as_millis();
+    println!();
+    println!(
+        "Verifiable Credential (VC)  of {:?} total attributes, \n\
+         and indexes {:?} revealed.\n\
+        VC Issuance phase: {:.2}ms \n\
+        VC Verification phase: {:.2}ms \n\
+        VP Creation phase: {:.2}ms \n\
+        VP Verification phase: {:.2}ms",
+        message_count,
+        revealed_indices,
+        vc_issue_time,
+        vc_verify_time,
+        proof_gen_time,
+        proof_verify_time
+    );
 }
