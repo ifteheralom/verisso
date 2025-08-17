@@ -1,25 +1,28 @@
 //Ref: https://github.com/docknetwork/crypto/tree/main/bbs_plus
 
-use std::collections::{ BTreeSet};
-use std::time::{Duration, Instant};
-use blake2::Blake2b512;
-use bbs_plus::setup::{PublicKeyG2, SignatureParams23G1, SecretKey};
-use rand::prelude::*;
+use crate::exp_utils::{get_as_millis, setup_messages, Timer};
+use crate::ot::*;
 use ark_bls12_381::{Bls12_381, Fr};
-use ark_ff::{PrimeField};
-use ark_std::{rand::{rngs::StdRng, SeedableRng}, Zero};
+use ark_ff::PrimeField;
+use ark_std::{
+    rand::{rngs::StdRng, SeedableRng},
+    Zero,
+};
+use bbs_plus::setup::{PublicKeyG2, SecretKey, SignatureParams23G1};
 use bbs_plus::signature_23::Signature23G1;
 use bbs_plus::threshold::multiplication_phase::Phase2;
 use bbs_plus::threshold::randomness_generation_phase::Phase1;
 use bbs_plus::threshold::threshold_bbs::BBSSignatureShare;
+use blake2::Blake2b512;
+use oblivious_transfer_protocols::ot_based_multiplication::base_ot_multi_party_pairwise::BaseOTOutput;
 use oblivious_transfer_protocols::ot_based_multiplication::{
     dkls18_mul_2p::MultiplicationOTEParams, dkls19_batch_mul_2p::GadgetVector,
 };
 use oblivious_transfer_protocols::*;
-use oblivious_transfer_protocols::ot_based_multiplication::base_ot_multi_party_pairwise::BaseOTOutput;
+use rand::prelude::*;
 use secret_sharing_and_dkg::shamir_ss::deal_random_secret;
-use crate::exp_utils::{get_as_millis, setup_messages, Timer};
-use crate::ot::*;
+use std::collections::BTreeSet;
+use std::time::{Duration, Instant};
 
 const BASE_OT_KEY_SIZE: u16 = 128;
 const KAPPA: u16 = 256;
@@ -32,17 +35,18 @@ pub fn trusted_party_keygen<R: RngCore>(
     rng: &mut R,
     threshold: ParticipantId,
     total: ParticipantId,
-    params: SignatureParams23G1<Bls12_381>
+    params: SignatureParams23G1<Bls12_381>,
 ) -> (PublicKeyG2<Bls12_381>, Fr, Vec<Fr>) {
     let (secret, shares, _) = deal_random_secret(rng, threshold, total).unwrap();
     let secret_shares = shares.0.into_iter().map(|s| s.share).collect();
-    let public_key = PublicKeyG2::generate_using_secret_key_and_bbs23_params(&SecretKey(secret), &params);
+    let public_key =
+        PublicKeyG2::generate_using_secret_key_and_bbs23_params(&SecretKey(secret), &params);
     (public_key, secret, secret_shares)
 }
 
 pub fn setup_public_key<F: PrimeField>(
-    secret : Fr,
-    params: SignatureParams23G1<Bls12_381>
+    secret: Fr,
+    params: SignatureParams23G1<Bls12_381>,
 ) -> PublicKeyG2<Bls12_381> {
     return PublicKeyG2::generate_using_secret_key_and_bbs23_params(&SecretKey(secret), &params);
 }
@@ -68,14 +72,9 @@ pub fn sign<R: rand::RngCore>(
     for i in 1..=THRESHOLD_SIGNERS {
         let mut others = threshold_party_set.clone();
         others.remove(&i);
-        let (round1, comm, comm_zero) = Phase1::<Fr, 256>::init_for_bbs(
-            rng,
-            SIG_BATCH_SIZE,
-            i,
-            others,
-            protocol_id.clone(),
-        )
-            .unwrap();
+        let (round1, comm, comm_zero) =
+            Phase1::<Fr, 256>::init_for_bbs(rng, SIG_BATCH_SIZE, i, others, protocol_id.clone())
+                .unwrap();
         round1s.push(round1);
         commitments.push(comm);
         commitments_zero_share.push(comm_zero);
@@ -116,7 +115,9 @@ pub fn sign<R: rand::RngCore>(
     // Signers finish round-1 to generate the output
     let mut expected_sk = Fr::zero();
     for (i, round1) in round1s.into_iter().enumerate() {
-        let out = round1.finish_for_bbs::<Blake2b512>(&secret_key_shares[i]).unwrap();
+        let out = round1
+            .finish_for_bbs::<Blake2b512>(&secret_key_shares[i])
+            .unwrap();
         expected_sk += out.masked_signing_key_shares.iter().sum::<Fr>();
         round1outs.push(out);
     }
@@ -138,7 +139,7 @@ pub fn sign<R: rand::RngCore>(
             ote_params,
             &gadget_vector,
         )
-            .unwrap();
+        .unwrap();
         round2s.push(phase);
         all_msg_1s.push((i, U));
     }
@@ -166,13 +167,9 @@ pub fn sign<R: rand::RngCore>(
 
     for k in 0..SIG_BATCH_SIZE as usize {
         for i in 0..THRESHOLD_SIGNERS as usize {
-            let share = BBSSignatureShare::new(
-                &messages,
-                k,
-                &round1outs[i],
-                &round2_outputs[i],
-                &params,
-            ).unwrap();
+            let share =
+                BBSSignatureShare::new(&messages, k, &round1outs[i], &round2_outputs[i], &params)
+                    .unwrap();
             shares.push(share);
         }
         signature = BBSSignatureShare::aggregate(shares.clone()).unwrap();
@@ -184,31 +181,32 @@ pub fn verify(
     signature: Signature23G1<Bls12_381>,
     messages: Vec<Fr>,
     public_key: PublicKeyG2<Bls12_381>,
-    params: SignatureParams23G1<Bls12_381>
+    params: SignatureParams23G1<Bls12_381>,
 ) {
-    return signature.verify(
-        &messages,
-        public_key.clone(),
-        params.clone()
-    ).unwrap();
+    return signature
+        .verify(&messages, public_key.clone(), params.clone())
+        .unwrap();
 }
 
 pub fn test_token() {
     let mut rng = StdRng::seed_from_u64(0u64);
     let message_count = 3;
-    let params: SignatureParams23G1<Bls12_381> = SignatureParams23G1::<Bls12_381>::generate_using_rng(&mut rng, message_count);
+    let params: SignatureParams23G1<Bls12_381> =
+        SignatureParams23G1::<Bls12_381>::generate_using_rng(&mut rng, message_count);
 
     let ote_params = MultiplicationOTEParams::<KAPPA, STATISTICAL_SECURITY_PARAMETER> {};
-    let gadget_vector = GadgetVector::<Fr, KAPPA, STATISTICAL_SECURITY_PARAMETER>::new::<
-        Blake2b512,
-    >(ote_params, b"test-gadget-vector");
+    let gadget_vector = GadgetVector::<Fr, KAPPA, STATISTICAL_SECURITY_PARAMETER>::new::<Blake2b512>(
+        ote_params,
+        b"test-gadget-vector",
+    );
     let protocol_id = b"test".to_vec();
 
     let all_party_set = (1..=TOTAL_SIGNERS).into_iter().collect::<BTreeSet<_>>();
     let threshold_party_set = (1..=THRESHOLD_SIGNERS).into_iter().collect::<BTreeSet<_>>();
 
     let messages = setup_messages(&mut rng, message_count);
-    let (public_key, sk, sk_shares) = trusted_party_keygen(&mut rng, THRESHOLD_SIGNERS, TOTAL_SIGNERS, params.clone());
+    let (public_key, sk, sk_shares) =
+        trusted_party_keygen(&mut rng, THRESHOLD_SIGNERS, TOTAL_SIGNERS, params.clone());
     let base_ot_outputs = do_pairwise_base_ot::<BASE_OT_KEY_SIZE>(
         &mut rng,
         ote_params.num_base_ot(),
@@ -245,7 +243,7 @@ pub fn test_token() {
             others,
             protocol_id.clone(),
         )
-            .unwrap();
+        .unwrap();
         round1s.push(round1);
         commitments.push(comm);
         commitments_zero_share.push(comm_zero);
@@ -308,7 +306,7 @@ pub fn test_token() {
             ote_params,
             &gadget_vector,
         )
-            .unwrap();
+        .unwrap();
         round2s.push(phase);
         all_msg_1s.push((i, U));
     }
@@ -335,14 +333,9 @@ pub fn test_token() {
     let mut shares = vec![];
     let start = Instant::now();
     for i in 0..THRESHOLD_SIGNERS as usize {
-        let share = BBSSignatureShare::new(
-            &messages,
-            0,
-            &round1outs[i],
-            &round2_outputs[i],
-            &params,
-        )
-            .unwrap();
+        let share =
+            BBSSignatureShare::new(&messages, 0, &round1outs[i], &round2_outputs[i], &params)
+                .unwrap();
         shares.push(share);
     }
 
@@ -358,14 +351,11 @@ pub fn test_token() {
     token_verify_time = get_as_millis(elapsed.unwrap());
 
     println!();
-    println!("ID token of {:?} total attributes, \n\
+    println!(
+        "ID token of {:?} total attributes, \n\
      total AS signers {:?} and threshold {:?}. \n\
       Token Issuance phase: {:.2}ms\n\
        Token Verification phase: {:.2}ms",
-             message_count,
-             TOTAL_SIGNERS,
-             THRESHOLD_SIGNERS,
-             token_issue_time,
-             token_verify_time
+        message_count, TOTAL_SIGNERS, THRESHOLD_SIGNERS, token_issue_time, token_verify_time
     );
 }

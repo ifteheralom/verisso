@@ -1,52 +1,42 @@
 // Ref: https://github.com/docknetwork/crypto/tree/main/bbs_plus
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::time::{Duration, Instant};
+use crate::exp_utils::*;
+use ark_bls12_381::{Bls12_381, Fr};
+use ark_std::rand::{rngs::StdRng, SeedableRng};
 use bbs_plus::prelude::{PublicKeyG2, Signature23G1};
+use bbs_plus::proof_23::PoKOfSignature23G1Protocol;
 use bbs_plus::setup::{KeypairG2, SecretKey, SignatureParams23G1};
 use blake2::Blake2b512;
-use ark_bls12_381::{Bls12_381, Fr};
-use ark_std::{rand::{rngs::StdRng, SeedableRng}};
-use bbs_plus::proof_23::{PoKOfSignature23G1Protocol};
-use dock_crypto_utils::{signature::{MessageOrBlinding}};
+use dock_crypto_utils::signature::MessageOrBlinding;
 use schnorr_pok::compute_random_oracle_challenge;
-use crate::exp_utils::*;
+use std::collections::{BTreeMap, BTreeSet};
+use std::time::{Duration, Instant};
 
 pub fn setup_keys<R: rand::RngCore>(
     rng: &mut R,
-    params: &SignatureParams23G1<Bls12_381>
+    params: &SignatureParams23G1<Bls12_381>,
 ) -> KeypairG2<Bls12_381> {
-    return KeypairG2::<Bls12_381>::generate_using_rng_and_bbs23_params(
-        rng,
-        &params
-    );
+    return KeypairG2::<Bls12_381>::generate_using_rng_and_bbs23_params(rng, &params);
 }
 
 pub fn sign<R: rand::RngCore>(
     messages: Vec<Fr>,
     secret_key: SecretKey<Fr>,
     params: SignatureParams23G1<Bls12_381>,
-    rng: &mut R
+    rng: &mut R,
 ) -> Signature23G1<Bls12_381> {
-    return Signature23G1::<Bls12_381>::new(
-        rng,
-        &messages,
-        &secret_key,
-        &params
-    ).unwrap();
+    return Signature23G1::<Bls12_381>::new(rng, &messages, &secret_key, &params).unwrap();
 }
 
 pub fn verify_sign(
     messages: Vec<Fr>,
     signature: Signature23G1<Bls12_381>,
     public_key: PublicKeyG2<Bls12_381>,
-    params: SignatureParams23G1<Bls12_381>
+    params: SignatureParams23G1<Bls12_381>,
 ) {
-    return signature.verify(
-        &messages,
-        public_key.clone(),
-        params.clone()
-    ).unwrap();
+    return signature
+        .verify(&messages, public_key.clone(), params.clone())
+        .unwrap();
 }
 
 pub fn make_proof<R: rand::RngCore>(
@@ -55,7 +45,7 @@ pub fn make_proof<R: rand::RngCore>(
     revealed_indices: BTreeSet<usize>,
     signature: Signature23G1<Bls12_381>,
     params: SignatureParams23G1<Bls12_381>,
-    rng: &mut R
+    rng: &mut R,
 ) -> bbs_plus::proof_23::PoKOfSignature23G1Proof<Bls12_381> {
     let pok = PoKOfSignature23G1Protocol::init(
         rng,
@@ -70,12 +60,15 @@ pub fn make_proof<R: rand::RngCore>(
                 MessageOrBlinding::BlindMessageRandomly(msg)
             }
         }),
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut chal_bytes_prover = vec![];
-    pok.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_prover).unwrap();
+    pok.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_prover)
+        .unwrap();
     let challenge_prover = compute_random_oracle_challenge::<Fr, Blake2b512>(&chal_bytes_prover);
-    let res: bbs_plus::proof_23::PoKOfSignature23G1Proof<Bls12_381> = pok.gen_proof(&challenge_prover).unwrap();
+    let res: bbs_plus::proof_23::PoKOfSignature23G1Proof<Bls12_381> =
+        pok.gen_proof(&challenge_prover).unwrap();
     return res;
 }
 
@@ -84,14 +77,16 @@ pub fn verify_proof(
     revealed_msgs: BTreeMap<usize, Fr>,
     challenge_verifier: Fr,
     public_key: PublicKeyG2<Bls12_381>,
-    params: SignatureParams23G1<Bls12_381>
+    params: SignatureParams23G1<Bls12_381>,
 ) {
-    return proof.verify(
-        &revealed_msgs,
-        &challenge_verifier,
-        public_key.clone(),
-        params.clone(),
-    ).unwrap();
+    return proof
+        .verify(
+            &revealed_msgs,
+            &challenge_verifier,
+            public_key.clone(),
+            params.clone(),
+        )
+        .unwrap();
 }
 
 pub fn test_credential() {
@@ -113,13 +108,14 @@ pub fn test_credential() {
     //
 
     mTimer.start();
-    let sig = Signature23G1::<Bls12_381>::new(&mut rng, &messages, &keypair.secret_key, &params).unwrap();
+    let sig =
+        Signature23G1::<Bls12_381>::new(&mut rng, &messages, &keypair.secret_key, &params).unwrap();
     elapsed = mTimer.stop();
     vc_issue_time = get_as_millis(elapsed.unwrap());
 
-
     mTimer.start();
-    sig.verify(&messages, keypair.public_key.clone(), params.clone()).unwrap();
+    sig.verify(&messages, keypair.public_key.clone(), params.clone())
+        .unwrap();
     elapsed = mTimer.stop();
     vc_verify_time = get_as_millis(elapsed.unwrap());
 
@@ -149,10 +145,12 @@ pub fn test_credential() {
                 MessageOrBlinding::BlindMessageRandomly(msg)
             }
         }),
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut chal_bytes_prover = vec![];
-    pok.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_prover).unwrap();
+    pok.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_prover)
+        .unwrap();
     let challenge_prover = compute_random_oracle_challenge::<Fr, Blake2b512>(&chal_bytes_prover);
     let proof = pok.gen_proof(&challenge_prover).unwrap();
     elapsed = mTimer.stop();
@@ -160,11 +158,21 @@ pub fn test_credential() {
 
     let public_key: &PublicKeyG2<Bls12_381> = &keypair.public_key;
     let mut chal_bytes_verifier = vec![];
-    proof.challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_verifier).unwrap();
-    let challenge_verifier = compute_random_oracle_challenge::<Fr, Blake2b512>(&chal_bytes_verifier);
+    proof
+        .challenge_contribution(&revealed_msgs, &params, &mut chal_bytes_verifier)
+        .unwrap();
+    let challenge_verifier =
+        compute_random_oracle_challenge::<Fr, Blake2b512>(&chal_bytes_verifier);
 
     mTimer.start();
-    proof.verify(&revealed_msgs, &challenge_verifier, public_key.clone(), params.clone()).unwrap();
+    proof
+        .verify(
+            &revealed_msgs,
+            &challenge_verifier,
+            public_key.clone(),
+            params.clone(),
+        )
+        .unwrap();
     elapsed = mTimer.stop();
     proof_verify_time = get_as_millis(elapsed.unwrap());
 

@@ -34,7 +34,7 @@ pub fn do_pairwise_base_ot<const KEY_SIZE: u16>(
     all_party_set: BTreeSet<ParticipantId>,
 ) -> Vec<BaseOTOutput> {
     #[allow(non_snake_case)]
-        let B = <Bls12_381 as Pairing>::G1Affine::rand(rng);
+    let B = <Bls12_381 as Pairing>::G1Affine::rand(rng);
     let mut base_ots = vec![];
     let mut sender_pks = BTreeMap::new();
     let mut receiver_pks = BTreeMap::new();
