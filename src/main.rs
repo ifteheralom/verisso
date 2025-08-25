@@ -3,6 +3,7 @@ mod tbbs_sign;
 mod ot;
 mod exp_utils;
 mod Signer;
+mod backup;
 
 const HTML_DIR: &str = "html";
 
