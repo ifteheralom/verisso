@@ -13,6 +13,7 @@ pub fn get_as_millis(duration: Duration) -> f64 {
 
 // Struct to manage the timer
 pub struct Timer {
+    label: Option<String>,
     start_time: Arc<Mutex<Option<Instant>>>,
 }
 
@@ -20,6 +21,14 @@ impl Timer {
     // Creates a new timer
     pub fn new() -> Self {
         Timer {
+            label: None,
+            start_time: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn with_label<L: Into<String>>(label: L) -> Self {
+        Timer {
+            label: Some(label.into()),
             start_time: Arc::new(Mutex::new(None)),
         }
     }
@@ -43,6 +52,17 @@ impl Timer {
         } else {
             None // Timer was not started
         }
+    }
+
+    pub fn stop_and_print_ms(&self) {
+        self.stop().map(|d| {
+            let ms = get_as_millis(d);
+            if let Some(label) = &self.label {
+                println!("{}: {:.2} ms", label, ms);
+            } else {
+                println!("{:.2} ms", ms);
+            }
+        });
     }
 }
 

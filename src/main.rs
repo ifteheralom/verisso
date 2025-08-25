@@ -2,6 +2,7 @@ mod bbs_sign;
 mod tbbs_sign;
 mod ot;
 mod exp_utils;
+mod Signer;
 
 const HTML_DIR: &str = "html";
 

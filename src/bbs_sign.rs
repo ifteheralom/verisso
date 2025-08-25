@@ -168,19 +168,19 @@ pub fn test_credential() {
     elapsed = mTimer.stop();
     proof_verify_time = get_as_millis(elapsed.unwrap());
 
-    println!();
-    println!(
-        "Verifiable Credential (VC)  of {:?} total attributes, \n\
-         and indexes {:?} revealed.\n\
-        VC Issuance phase: {:.2}ms \n\
-        VC Verification phase: {:.2}ms \n\
-        VP Creation phase: {:.2}ms \n\
-        VP Verification phase: {:.2}ms",
-        message_count,
-        revealed_indices,
-        vc_issue_time,
-        vc_verify_time,
-        proof_gen_time,
-        proof_verify_time
-    );
+    println!("User Registration Phase: ");
+    // println!(
+    //     "Verifiable Credential (VC)  of {:?} total attributes, \n\
+    //      and indexes {:?} revealed.\n\
+    //     VC Issuance phase: {:.2}ms \n\
+    //     VC Verification phase: {:.2}ms \n\
+    //     VP Creation phase: {:.2}ms \n\
+    //     VP Verification phase: {:.2}ms",
+    //     message_count,
+    //     revealed_indices,
+    //     vc_issue_time,
+    //     vc_verify_time,
+    //     proof_gen_time,
+    //     proof_verify_time
+    // );
 }

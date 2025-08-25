@@ -1,6 +1,6 @@
 //Ref: https://github.com/docknetwork/crypto/tree/main/bbs_plus
 
-use std::collections::{ BTreeSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 use blake2::Blake2b512;
 use bbs_plus::setup::{PublicKeyG2, SignatureParams23G1, SecretKey};
@@ -11,15 +11,18 @@ use ark_std::{rand::{rngs::StdRng, SeedableRng}, Zero};
 use bbs_plus::signature_23::Signature23G1;
 use bbs_plus::threshold::multiplication_phase::Phase2;
 use bbs_plus::threshold::randomness_generation_phase::Phase1;
-use bbs_plus::threshold::threshold_bbs::BBSSignatureShare;
+use bbs_plus::threshold::threshold_bbs::{BBSSignatureShare, Phase1Output};
 use oblivious_transfer_protocols::ot_based_multiplication::{
     dkls18_mul_2p::MultiplicationOTEParams, dkls19_batch_mul_2p::GadgetVector,
 };
 use oblivious_transfer_protocols::*;
+use oblivious_transfer_protocols::cointoss::Commitments;
 use oblivious_transfer_protocols::ot_based_multiplication::base_ot_multi_party_pairwise::BaseOTOutput;
+use oblivious_transfer_protocols::ot_based_multiplication::batch_mul_multi_party::Message1;
 use secret_sharing_and_dkg::shamir_ss::deal_random_secret;
 use crate::exp_utils::{get_as_millis, setup_messages, Timer};
 use crate::ot::*;
+use crate::Signer::Signer;
 
 const BASE_OT_KEY_SIZE: u16 = 128;
 const KAPPA: u16 = 256;
@@ -193,6 +196,44 @@ pub fn verify(
     ).unwrap();
 }
 
+pub fn do_round1<R: RngCore>(
+    rng: &mut R,
+    batch_size: u32,
+    id: u16,
+    others: BTreeSet<u16>,
+    protocol_id: Vec<u8>,
+) -> (Phase1<Fr, 256>, Commitments, BTreeMap<ParticipantId, Commitments>) {
+    Phase1::<Fr, 256>::init_for_bbs(
+        rng,
+        batch_size,
+        id,
+        others.clone(),
+        protocol_id
+    ).unwrap()
+}
+
+pub fn do_round2<R: RngCore>(
+    rng: &mut R,
+    id: u16,
+    masked_signing_key_share: Vec<Fr>,
+    masked_r: Vec<Fr>,
+    base_ot: BaseOTOutput,
+    others: BTreeSet<u16>,
+    ote_params: MultiplicationOTEParams<KAPPA, STATISTICAL_SECURITY_PARAMETER>,
+    gadget_vector: &GadgetVector<Fr, KAPPA, STATISTICAL_SECURITY_PARAMETER>,
+) -> (Phase2<Fr, 256, 80>, BTreeMap<ParticipantId, Message1<Fr>>) {
+    Phase2::init(
+        rng,
+        id,
+        masked_signing_key_share.clone(),
+        masked_r.clone(),
+        base_ot,
+        others.clone(),
+        ote_params,
+        gadget_vector,
+    ).unwrap()
+}
+
 pub fn test_token() {
     let mut rng = StdRng::seed_from_u64(0u64);
     let message_count = 3;
@@ -207,6 +248,7 @@ pub fn test_token() {
     let all_party_set = (1..=TOTAL_SIGNERS).into_iter().collect::<BTreeSet<_>>();
     let threshold_party_set = (1..=THRESHOLD_SIGNERS).into_iter().collect::<BTreeSet<_>>();
 
+
     let messages = setup_messages(&mut rng, message_count);
     let (public_key, sk, sk_shares) = trusted_party_keygen(&mut rng, THRESHOLD_SIGNERS, TOTAL_SIGNERS, params.clone());
     let base_ot_outputs = do_pairwise_base_ot::<BASE_OT_KEY_SIZE>(
@@ -216,17 +258,18 @@ pub fn test_token() {
         all_party_set.clone(),
     );
 
-    // println!(
-    //     "For a batch size of {} BBS signatures and {} signers",
-    //     SIG_BATCH_SIZE, THRESHOLD_SIGNERS
-    // );
+    let mut signers: Vec<Signer> = (1..=THRESHOLD_SIGNERS)
+        .map(|id| Signer::new(id, sk_shares[id as usize - 1]))
+        .collect();
 
-    // For experimental purposes
-    let mTimer = Timer::new();
-    let mut elapsed: Option<Duration>;
-    let mut token_issue_time: f64;
-    let mut token_verify_time: f64;
-    //
+
+    println!("\n SSO Authentication Phase");
+    println!("ID token of {:?} total attributes, \n\
+     total AS signers {:?} and threshold {:?}. \n",
+             message_count,
+             TOTAL_SIGNERS,
+             THRESHOLD_SIGNERS
+    );
 
     // Following have to happen for each new batch of signatures. Batch size can be 1 when creating one signature at a time
     let mut round1s = vec![];
@@ -235,21 +278,24 @@ pub fn test_token() {
     let mut round1outs = vec![];
 
     // PHASE: 1 - Signers initiate round-1 and each signer sends commitments to others
+    let fn1_timer = Timer::with_label("fn1_timer");
+    fn1_timer.start();
     for i in 1..=THRESHOLD_SIGNERS {
         let mut others = threshold_party_set.clone();
         others.remove(&i);
-        let (round1, comm, comm_zero) = Phase1::<Fr, 256>::init_for_bbs(
+        let (round1, comm, comm_zero) = signers[(i - 1) as usize].do_round1 (
             &mut rng,
             SIG_BATCH_SIZE,
             i,
             others,
             protocol_id.clone(),
-        )
-            .unwrap();
+        );
+
         round1s.push(round1);
         commitments.push(comm);
         commitments_zero_share.push(comm_zero);
     }
+    fn1_timer.stop_and_print_ms();
 
     // Signers process round-1 commitments received from others
     for i in 1..=THRESHOLD_SIGNERS {
@@ -295,10 +341,12 @@ pub fn test_token() {
     let mut all_msg_1s = vec![];
 
     // PHASE: 2 - Signers initiate round-2 and each signer sends messages to others
+    let fn2_timer = Timer::with_label("fn2_timer");
+    fn2_timer.start();
     for i in 1..=THRESHOLD_SIGNERS {
         let mut others = threshold_party_set.clone();
         others.remove(&i);
-        let (phase, U) = Phase2::init(
+        let (phase, U) = signers[(i - 1) as usize].do_round2 (
             &mut rng,
             i,
             round1outs[i as usize - 1].masked_signing_key_shares.clone(),
@@ -307,11 +355,11 @@ pub fn test_token() {
             others,
             ote_params,
             &gadget_vector,
-        )
-            .unwrap();
+        );
         round2s.push(phase);
         all_msg_1s.push((i, U));
     }
+    fn2_timer.stop_and_print_ms();
 
     // Signers process round-2 messages received from others
     let mut all_msg_2s = vec![];
@@ -331,7 +379,8 @@ pub fn test_token() {
     }
     let round2_outputs = round2s.into_iter().map(|p| p.finish()).collect::<Vec<_>>();
 
-    mTimer.start();
+    let token_issue_time = Timer::with_label("token_issue_time");
+    token_issue_time.start();
     let mut shares = vec![];
     let start = Instant::now();
     for i in 0..THRESHOLD_SIGNERS as usize {
@@ -348,24 +397,11 @@ pub fn test_token() {
 
     // Client aggregate the shares to get the final signature
     let sig = BBSSignatureShare::aggregate(shares).unwrap();
-    elapsed = mTimer.stop();
-    token_issue_time = get_as_millis(elapsed.unwrap());
+    token_issue_time.stop_and_print_ms();
 
-    mTimer.start();
+    let token_verify_time = Timer::with_label("token_verify_time");
+    token_verify_time.start();
     sig.verify(&messages, public_key.clone(), params.clone())
         .unwrap();
-    elapsed = mTimer.stop();
-    token_verify_time = get_as_millis(elapsed.unwrap());
-
-    println!();
-    println!("ID token of {:?} total attributes, \n\
-     total AS signers {:?} and threshold {:?}. \n\
-      Token Issuance phase: {:.2}ms\n\
-       Token Verification phase: {:.2}ms",
-             message_count,
-             TOTAL_SIGNERS,
-             THRESHOLD_SIGNERS,
-             token_issue_time,
-             token_verify_time
-    );
+    token_verify_time.stop_and_print_ms();
 }
