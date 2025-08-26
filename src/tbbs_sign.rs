@@ -23,13 +23,7 @@ use secret_sharing_and_dkg::shamir_ss::deal_random_secret;
 use crate::exp_utils::{get_as_millis, setup_messages, Timer};
 use crate::ot::*;
 use crate::Signer::Signer;
-
-const BASE_OT_KEY_SIZE: u16 = 128;
-const KAPPA: u16 = 256;
-const STATISTICAL_SECURITY_PARAMETER: u16 = 80;
-const SIG_BATCH_SIZE: u32 = 1;
-const THRESHOLD_SIGNERS: u16 = 5;
-const TOTAL_SIGNERS: u16 = 8;
+use crate::constants::{*};
 
 pub fn trusted_party_keygen<R: RngCore>(
     rng: &mut R,
@@ -79,7 +73,7 @@ pub fn test_token() {
         .collect();
 
 
-    println!("\n SSO Authentication Phase");
+    println!("\nSSO Authentication Phase");
     println!("ID token of {:?} total attributes, \n\
      total AS signers {:?} and threshold {:?}. \n",
              message_count,
@@ -99,13 +93,8 @@ pub fn test_token() {
     for i in 1..=THRESHOLD_SIGNERS {
         let mut others = threshold_party_set.clone();
         others.remove(&i);
-        let (round1, comm, comm_zero) = signers[(i - 1) as usize].do_round1 (
-            &mut rng,
-            SIG_BATCH_SIZE,
-            i,
-            others,
-            protocol_id.clone(),
-        );
+        let (round1, comm, comm_zero)
+            = signers[(i - 1) as usize].do_round1 (i);
 
         round1s.push(round1);
         commitments.push(comm);
@@ -148,7 +137,7 @@ pub fn test_token() {
     // Signers finish round-1 to generate the output
     let mut expected_sk = Fr::zero();
     for (i, round1) in round1s.into_iter().enumerate() {
-        let out = round1.finish_for_bbs::<Blake2b512>(&sk_shares[i]).unwrap();
+        let out = signers[(i) as usize].finish_round1(round1);
         expected_sk += out.masked_signing_key_shares.iter().sum::<Fr>();
         round1outs.push(out);
     }
@@ -163,14 +152,9 @@ pub fn test_token() {
         let mut others = threshold_party_set.clone();
         others.remove(&i);
         let (phase, U) = signers[(i - 1) as usize].do_round2 (
-            &mut rng,
             i,
             round1outs[i as usize - 1].masked_signing_key_shares.clone(),
-            round1outs[i as usize - 1].masked_rs.clone(),
-            base_ot_outputs[i as usize - 1].clone(),
-            others,
-            ote_params,
-            &gadget_vector,
+            round1outs[i as usize - 1].masked_rs.clone()
         );
         round2s.push(phase);
         all_msg_1s.push((i, U));

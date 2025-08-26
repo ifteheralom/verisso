@@ -4,6 +4,8 @@ mod ot;
 mod exp_utils;
 mod Signer;
 mod backup;
+mod wire;
+mod constants;
 
 const HTML_DIR: &str = "html";
 

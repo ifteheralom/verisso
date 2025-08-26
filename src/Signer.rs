@@ -18,59 +18,82 @@ use oblivious_transfer_protocols::ot_based_multiplication::base_ot_multi_party_p
 use oblivious_transfer_protocols::ot_based_multiplication::batch_mul_multi_party::Message1;
 use oblivious_transfer_protocols::ParticipantId;
 use secret_sharing_and_dkg::shamir_ss::deal_random_secret;
-
-const BASE_OT_KEY_SIZE: u16 = 128;
-const KAPPA: u16 = 256;
-const STATISTICAL_SECURITY_PARAMETER: u16 = 80;
-const SIG_BATCH_SIZE: u32 = 1;
+use crate::ot::do_pairwise_base_ot;
+use crate::constants::{*};
+use crate::tbbs_sign::trusted_party_keygen;
 
 pub struct Signer {
     pub id: u16,
     pub sk_share: Fr,
+    pub rng: StdRng,
+    pub all_party_set: BTreeSet<u16>,
+    pub threshold_party_set: BTreeSet<u16>,
+    pub protocol_id: Vec<u8>,
 }
 
 impl Signer {
     pub fn new(id: u16, sk_share: Fr) -> Self {
-        Self { id, sk_share }
+        Signer {
+            rng: StdRng::seed_from_u64(0u64),
+            all_party_set: (1..=TOTAL_SIGNERS).into_iter().collect::<BTreeSet<_>>(),
+            threshold_party_set: (1..=THRESHOLD_SIGNERS).into_iter().collect::<BTreeSet<_>>(),
+            protocol_id: b"test".to_vec(),
+            id: id,
+            sk_share: sk_share
+        }
     }
 
-    pub fn do_round1<R: RngCore>(
+    pub fn do_round1 (
         &self,
-        rng: &mut R,
-        batch_size: u32,
-        id: u16,
-        others: BTreeSet<u16>,
-        protocol_id: Vec<u8>,
+        id: u16
     ) -> (Phase1<Fr, 256>, Commitments, BTreeMap<ParticipantId, Commitments>) {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut others = self.threshold_party_set.clone();
+        others.remove(&id);
+
         Phase1::<Fr, 256>::init_for_bbs(
-            rng,
-            batch_size,
-            id,
-            others.clone(),
-            protocol_id
+            &mut rng, SIG_BATCH_SIZE, id, others.clone(), self.protocol_id.clone()
         ).unwrap()
     }
 
-    pub fn do_round2<R: RngCore>(
+    pub fn finish_round1 (
         &self,
-        rng: &mut R,
+        round1: Phase1<Fr, 256>
+    ) -> (Phase1Output<Fr>) {
+        round1.finish_for_bbs::<Blake2b512>(&self.sk_share)
+            .unwrap()
+    }
+
+    pub fn do_round2 (
+        &self,
         id: u16,
         masked_signing_key_share: Vec<Fr>,
         masked_r: Vec<Fr>,
-        base_ot: BaseOTOutput,
-        others: BTreeSet<u16>,
-        ote_params: MultiplicationOTEParams<KAPPA, STATISTICAL_SECURITY_PARAMETER>,
-        gadget_vector: &GadgetVector<Fr, KAPPA, STATISTICAL_SECURITY_PARAMETER>,
     ) -> (Phase2<Fr, 256, 80>, BTreeMap<ParticipantId, Message1<Fr>>) {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut others = self.threshold_party_set.clone();
+        others.remove(&id);
+
+        let ote_params = MultiplicationOTEParams::<KAPPA, STATISTICAL_SECURITY_PARAMETER> {};
+        let gadget_vector = GadgetVector::<Fr, KAPPA, STATISTICAL_SECURITY_PARAMETER>::new::<
+            Blake2b512,
+        >(ote_params, b"test-gadget-vector");
+
+        let base_ot_outputs = do_pairwise_base_ot::<BASE_OT_KEY_SIZE>(
+            &mut rng,
+            ote_params.num_base_ot(),
+            TOTAL_SIGNERS,
+            self.all_party_set.clone(),
+        );
+
         Phase2::init(
-            rng,
-            id,
-            masked_signing_key_share.clone(),
-            masked_r.clone(),
-            base_ot,
+            &mut rng, id,
+            masked_signing_key_share,
+            masked_r,
+            base_ot_outputs[id as usize - 1].clone(),
             others.clone(),
             ote_params,
-            gadget_vector,
+            &gadget_vector,
         ).unwrap()
     }
 }
