@@ -269,3 +269,5 @@ fabric.properties
 .idea/caches/build_file_checksums.ser
 
 op/
+__pycache__/
+cloudlab.pem
