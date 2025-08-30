@@ -1,0 +1,91 @@
+set preciseActions = true.
+free c: channel.
+
+type skey. 
+type pkey. 
+type msg. 
+type sig. 
+type nonce.
+
+(* Public key constructor and signing. *)
+fun pk(skey): pkey.
+fun bbs_sign(msg, skey, nonce): sig [private].
+
+(* Message constructors for VC issuance *)
+fun pair(msg, msg): msg [data].
+fun attachGamma(msg, nonce): msg [data].
+fun blind(msg, nonce): msg [data].
+fun unblind(sig, nonce): sig.
+
+(* Verification *)
+const ok, bad: bitstring.
+
+(* Correctness axiom *)
+reduc forall m: msg, us: msg, d: nonce, gamma: nonce, k: skey, r: nonce;
+  bbs_verify(
+    unblind(bbs_sign(attachGamma(blind(pair(m,us), d), gamma), k, r), d),
+    attachGamma(pair(m,us), gamma),
+    pk(k)
+  ) = ok.
+
+(* Observed events *)
+event PublishedPK(pkey).
+event Requested(msg, msg, nonce).
+event IssuedBlind(msg, nonce, pkey).
+event Unblinded(msg, msg, nonce, pkey, sig, nonce).
+event VerifiedVC(msg, msg, nonce, pkey, sig, nonce).
+
+(* Registry: published issuer keys available to holders. *)
+table published(pkey).
+
+(* Issuer side *)
+let Issuer(sk: skey) =
+  let PK = pk(sk) in
+  insert published(PK);
+  event PublishedPK(PK);
+  out(c, PK);
+  ! in(c, bl: msg) [precise];
+    new gamma: nonce;
+    new r: nonce;
+    let s_blind = bbs_sign(attachGamma(bl, gamma), sk, r) in
+    event IssuedBlind(bl, gamma, PK);
+    out(c, (gamma, s_blind)).
+
+(* Holder side *)
+let Holder() =
+  in(c, PK: pkey) [precise];
+  get published(=PK) in
+    ! in(c, m: msg) [precise];
+      new us: msg;
+      new d: nonce;
+      event Requested(m, us, d);
+      let bl = blind(pair(m, us), d) in
+      out(c, bl);
+      in(c, (gamma: nonce, s_blind: sig)) [precise];
+      let s = unblind(s_blind, d) in
+      if bbs_verify(s, attachGamma(pair(m, us), gamma), PK) = ok then
+        event Unblinded(m, us, gamma, PK, s, d);
+        event VerifiedVC(m, us, gamma, PK, s, d);
+        out(c, ok)
+      else
+        out(c, bad).
+
+(* Security: Correcness, Unforgability of VC *)
+query m: msg, us: msg, gamma: nonce, PK: pkey, s: sig, d: nonce;
+      event(VerifiedVC(m, us, gamma, PK, s, d)) ==> event(IssuedBlind(blind(pair(m,us), d), gamma, PK)).
+
+(* Holder originally requested the VC, Audit *)
+query m: msg, us: msg, gamma: nonce, PK: pkey, s: sig, d: nonce;
+      event(VerifiedVC(m, us, gamma, PK, s, d)) ==> event(Requested(m, us, d)).
+
+(* Correct Public Key *)
+query m: msg, us: msg, gamma: nonce, PK: pkey, s: sig, d: nonce;
+      event(VerifiedVC(m, us, gamma, PK, s, d)) ==> event(PublishedPK(PK)).
+
+(* Secrecy of the secret key *)
+not attacker(new sk).
+
+(* Composition: one issuer and an unbounded number of holder sessions. *)
+process
+  new sk: skey;
+  ( Issuer(sk) | Holder() )
