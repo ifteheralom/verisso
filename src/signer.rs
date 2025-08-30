@@ -64,11 +64,7 @@ impl Signer {
 
     pub fn finish_round1(&self, round1: Phase1<Fr, 256>) -> Phase1Output<Fr> {
         let sk_share = &self.sk_share.unwrap();
-        println!("Finishing round 1 with sk_share: {:?}", sk_share);
         let result = round1.finish_for_bbs::<Blake2b512>(sk_share).unwrap();
-
-        println!("Finished round 1");
-
         result
     }
 

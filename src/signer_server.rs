@@ -105,7 +105,6 @@ async fn handle_payload(
     match payload.msg {
         Message::Start => Ok(()),
         Message::SkShares { shares } => {
-            println!("Received SK share: {} from {}", shares, payload.sender);
             let sk_share_fr = Encoder::decode_sk_share(shares.as_str())
                 .map_err(|e| format!("Decode error: {}", e))?;
             let mut s = signer.lock().await;

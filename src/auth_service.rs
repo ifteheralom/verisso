@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::exp_utils::setup_messages;
+use crate::exp_utils::*;
 use crate::helper::encoder::Encoder;
 
 use crate::constant::*;
@@ -23,8 +24,10 @@ use oblivious_transfer_protocols::ot_based_multiplication::{
 use oblivious_transfer_protocols::*;
 use rand::prelude::*;
 use secret_sharing_and_dkg::shamir_ss::deal_random_secret;
+use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
@@ -67,6 +70,10 @@ pub struct AuthenticationService {
     expected_sk: Fr,
     round2s: HashMap<ParticipantId, Phase2<Fr, 256, 80>>,
     all_msg_1s: HashMap<ParticipantId, BTreeMap<ParticipantId, Message1<Fr>>>,
+    fn1_timer: Timer,
+    fn2_timer: Timer,
+    token_issue_timer: Timer,
+    token_verify_timer: Timer,
 }
 
 impl AuthenticationService {
@@ -97,6 +104,11 @@ impl AuthenticationService {
         let round2s = HashMap::new();
         let all_msg_1s = HashMap::new();
 
+        let fn1_timer = Timer::with_label("fn1");
+        let fn2_timer = Timer::with_label("fn2");
+        let token_issue_timer = Timer::with_label("token_issue");
+        let token_verify_timer = Timer::with_label("token_verify");
+
         Self {
             config,
             peers,
@@ -112,6 +124,10 @@ impl AuthenticationService {
             expected_sk,
             round2s,
             all_msg_1s,
+            fn1_timer,
+            fn2_timer,
+            token_issue_timer,
+            token_verify_timer,
         }
     }
 
@@ -134,8 +150,6 @@ impl AuthenticationService {
                 },
             };
 
-            println!("{} = {:?}", node_id, sk_share);
-
             tokio::spawn(async move {
                 let mut stream = peer.lock().await;
                 if let Err(e) = send_message(&mut *stream, &payload).await {
@@ -150,6 +164,7 @@ impl AuthenticationService {
     }
 
     pub async fn send_round1_request(&mut self) {
+        self.fn1_timer.start();
         let guard = self.peers.lock().await;
         for (_node_id, peer) in guard.iter() {
             if !(1..=self.threshold_signers).contains(&_node_id) {
@@ -260,6 +275,8 @@ impl AuthenticationService {
         self.commitments.insert(sender, comm);
         self.commitments_zero_share.insert(sender, comm_zero);
 
+        self.fn1_timer.stop_and_print_ms();
+
         if self.round1s.len() as u16 == self.threshold_signers {
             self.complete_round1().await;
         }
@@ -283,10 +300,7 @@ impl AuthenticationService {
                 .masked_signing_key_shares
                 .clone();
 
-            // if i == 1 {
-            //     println!("Masked RS: {:?}", masked_rs);
-            //     println!("Masked SK Share: {:?}", masked_signing_key_share);
-            // }
+            self.fn2_timer.start();
 
             let payload = Payload {
                 sender: self.config.node_id,
@@ -361,6 +375,7 @@ impl AuthenticationService {
             .map(|(id, p)| (id, p.finish()))
             .collect();
 
+        self.token_issue_timer.start();
         let mut shares = vec![];
         for i in 1..=self.threshold_signers {
             let share = BBSSignatureShare::new(
@@ -375,11 +390,31 @@ impl AuthenticationService {
         }
 
         let sig = BBSSignatureShare::aggregate(shares).unwrap();
+        self.token_issue_timer.stop_and_print_ms();
+
+        self.token_verify_timer.start();
         if let Err(err) = sig.verify(&self.messages, self.public_key.clone(), self.params.clone()) {
             eprintln!("Signature verification failed: {:?}", err);
         } else {
             println!("Signature verified successfully");
         }
+        self.token_verify_timer.stop_and_print_ms();
+
+        let now = SystemTime::now();
+        let timestamp = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let mut file = tokio::fs::File::create(format!("./op/timings_{}.json", timestamp))
+            .await
+            .unwrap();
+
+        let timings = json!({
+            "fn1": self.fn1_timer.get_duration(),
+            "fn2": self.fn2_timer.get_duration(),
+            "token_issue": self.token_issue_timer.get_duration(),
+            "token_verify": self.token_verify_timer.get_duration(),
+        });
+        file.write_all(timings.to_string().as_bytes())
+            .await
+            .unwrap();
     }
 
     pub async fn process_round2_response(
@@ -390,6 +425,8 @@ impl AuthenticationService {
     ) {
         self.round2s.insert(sender, phase2);
         self.all_msg_1s.insert(sender, map);
+
+        self.fn2_timer.stop_and_print_ms();
 
         if self.round2s.len() as u16 == self.threshold_signers {
             self.complete_round2().await;

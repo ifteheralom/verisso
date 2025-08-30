@@ -1,8 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet};
 use ark_bls12_381::{Bls12_381, Fr};
 use ark_std::UniformRand;
 use bbs_plus::prelude::{KeypairG2, SignatureParams23G1};
 use rand::RngCore;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -13,14 +13,26 @@ pub fn get_as_millis(duration: Duration) -> f64 {
 
 // Struct to manage the timer
 pub struct Timer {
+    label: Option<String>,
     start_time: Arc<Mutex<Option<Instant>>>,
+    duration: Arc<Mutex<Option<f64>>>,
 }
 
 impl Timer {
     // Creates a new timer
     pub fn new() -> Self {
         Timer {
+            label: None,
             start_time: Arc::new(Mutex::new(None)),
+            duration: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn with_label<L: Into<String>>(label: L) -> Self {
+        Timer {
+            label: Some(label.into()),
+            start_time: Arc::new(Mutex::new(None)),
+            duration: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -39,16 +51,37 @@ impl Timer {
         if let Some(start_time) = *time {
             let elapsed = start_time.elapsed();
             *time = None; // Reset the timer
+            self.duration
+                .lock()
+                .unwrap()
+                .replace(get_as_millis(elapsed));
             Some(elapsed)
         } else {
             None // Timer was not started
         }
     }
+
+    pub fn stop_and_print_ms(&self) {
+        self.stop().map(|d| {
+            let ms = get_as_millis(d);
+            if let Some(label) = &self.label {
+                println!("{}: {:.2} ms", label, ms);
+            } else {
+                println!("{:.2} ms", ms);
+            }
+            self.duration.lock().unwrap().replace(ms);
+        });
+    }
+
+    pub fn get_duration(&self) -> Option<f64> {
+        let duration = self.duration.lock().unwrap();
+        duration.map(|d| d)
+    }
 }
 
 pub fn measure_time<T, F>(operation: F) -> (T, std::time::Duration)
-    where
-        F: FnOnce() -> T,
+where
+    F: FnOnce() -> T,
 {
     let start = Instant::now();
     let result = operation();
@@ -56,13 +89,8 @@ pub fn measure_time<T, F>(operation: F) -> (T, std::time::Duration)
     (result, elapsed)
 }
 
-pub fn setup_messages<R: rand::RngCore>(
-    rng: &mut R,
-    message_count: u32
-) -> Vec<Fr> {
-    let messages: Vec<Fr> = (0..message_count).map(|_| {
-        Fr::rand(rng)
-    }).collect();
+pub fn setup_messages<R: rand::RngCore>(rng: &mut R, message_count: u32) -> Vec<Fr> {
+    let messages: Vec<Fr> = (0..message_count).map(|_| Fr::rand(rng)).collect();
     return messages;
 }
 
