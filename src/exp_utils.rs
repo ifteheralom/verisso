@@ -73,9 +73,16 @@ impl Timer {
         });
     }
 
-    pub fn get_duration(&self) -> Option<f64> {
+    pub fn get_duration(&self) -> f64 {
         let duration = self.duration.lock().unwrap();
-        duration.map(|d| d)
+        duration.unwrap_or(0.0)
+    }
+
+    pub fn reset(&self) {
+        let mut time = self.start_time.lock().unwrap();
+        *time = None;
+        let mut duration = self.duration.lock().unwrap();
+        *duration = None;
     }
 }
 

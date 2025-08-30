@@ -47,7 +47,9 @@ parser.add_argument(
         "copy",
         "setup",
         "sync_env",
-        "run",
+        "run_tbbs",
+        "run_tbbs2",
+        "run_bbs",
         "run_exp",
         "copy_op",
         "terminate",
@@ -200,7 +202,7 @@ def setup_node(node: Node):
                 # Install rust
                 "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && ",
                 "source $HOME/.cargo/env && ",
-                "cd ~/verisso && cargo build --release --bin as && cargo build --release --bin signer && cargo build --release --bin client"
+                "cd ~/verisso && cargo build --release --bin as && cargo build --release --bin signer && cargo build --release --bin client && cargo build --release --bin bbs_sign"
             ],
             check=True,
         )
@@ -209,17 +211,24 @@ def setup_node(node: Node):
         logging.error(f"Error setting up node {node.hostname}: {e}")
         sys.exit(1)
 
-
-def run(nodes_dict: Dict[str, Node]):
+def run_bbs(node: Node):
+    # Copy op folder from ssh to my local
     try:
-        with multi.Pool(processes=len(nodes_dict)) as pool:
-            pool.map(run_node, nodes_dict.values())
-
-        logging.info("Experiment completed successfully.")
+        subprocess.run(
+            [
+                 "ssh",
+                "-o",
+                "StrictHostKeyChecking no",
+                f"{os.environ['USER']}@{node.hostname}",
+                "sudo chmod +x ~/verisso/target/release/bbs_sign && ",
+                "cd ~/verisso && ./target/release/bbs_sign"
+            ],
+            check=True,
+        )
+        logging.info(f"")
     except Exception as e:
-        logging.error(f"Error running nodes: {e}")
+        logging.error(f"")
         sys.exit(1)
-
 
 def run_exp(node: Node):
     # Copy op folder from ssh to my local
@@ -240,16 +249,81 @@ def run_exp(node: Node):
         sys.exit(1)
 
 
-def run_node(node: Node):
+def run_tbbs(nodes_dict: Dict[str, Node]):
+    msg_counts = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+    threshold_signer = 5
+    total_runs = 5
+    try:
+        for msg_count in msg_counts:
+            for current_run in range(1, total_runs + 1):
+                with multi.Pool(processes=len(nodes_dict)) as pool:
+                    results = [
+                        pool.apply_async(
+                            run_node, args=(node, msg_count, threshold_signer, current_run)
+                        )
+                        for node in nodes_dict.values()
+                    ]
+                    try:
+                        # wait up to 15 seconds for each node task to finish
+                        for r in results:
+                            r.get(timeout=15)
+                    except multi.TimeoutError:
+                        logging.warning(
+                            f"Timeout waiting for nodes to start (msg_count={msg_count}, run={current_run}). "
+                            "Terminating pool and continuing to next run."
+                        )
+                        pool.terminate()
+                        pool.join()
+                        # continue
+
+        logging.info("Experiment completed successfully.")
+    except Exception as e:
+        logging.error(f"Error running nodes: {e}")
+        sys.exit(1)
+
+def run_tbbs2(nodes_dict: Dict[str, Node]):
+    msg_counts = [5]
+    threshold_signers = [2, 3, 4, 5, 6, 7]
+    total_runs = 5
+    try:
+        for msg_count in msg_counts:
+            for threshold_signer in threshold_signers:
+                for current_run in range(1, total_runs + 1):
+                    with multi.Pool(processes=len(nodes_dict)) as pool:
+                        results = [
+                            pool.apply_async(
+                                run_node, args=(node, msg_count, threshold_signer, current_run)
+                            )
+                            for node in nodes_dict.values()
+                        ]
+                        try:
+                            # wait up to 15 seconds for each node task to finish
+                            for r in results:
+                                r.get(timeout=15)
+                        except multi.TimeoutError:
+                            logging.warning(
+                                f"Timeout waiting for nodes to start (msg_count={msg_count}, run={current_run}). "
+                                "Terminating pool and continuing to next run."
+                            )
+                            pool.terminate()
+                            pool.join()
+                            # continue
+
+        logging.info("Experiment completed successfully.")
+    except Exception as e:
+        logging.error(f"Error running nodes: {e}")
+        sys.exit(1)
+
+def run_node(node: Node, msg_count: int, threshold_signer: int, current_run: int):
     client_id = node.client_id
     # Get digit from client_id can have multiple digits
     id = int("".join(filter(str.isdigit, client_id)))
     # logging.info(f"Running node {node.hostname} with client_id {client_id} and id {id}")
     run_command = ""
     if id == 0:
-        run_command = f"NODE_ID=0 TOTAL_NODES=8 ~/verisso/target/release/as"
+        run_command = f"NODE_ID=0 MESSAGE_COUNT={msg_count} THRESHOLD_SIGNERS={threshold_signer} TOTAL_NODES=8 CURRENT_RUN={current_run} ~/verisso/target/release/as"
     else:
-        run_command = f"cd ~/verisso && NODE_ID={id} TOTAL_NODES=8 ~/verisso/target/release/signer"
+        run_command = f"NODE_ID={id} MESSAGE_COUNT={msg_count} THRESHOLD_SIGNERS={threshold_signer} TOTAL_NODES=8 CURRENT_RUN={current_run} ~/verisso/target/release/signer"
 
     try:
         logging.info(f"Starting node {node.hostname} with id {id}")
@@ -330,8 +404,12 @@ if __name__ == "__main__":
         setup_nodes(nodes)
     elif args.command == "sync_env":
         copy_envs(nodes)
-    elif args.command == "run":
-        run(nodes)
+    elif args.command == "run_bbs":
+        run_bbs(nodes["node0"])
+    elif args.command == "run_tbbs":
+        run_tbbs(nodes)
+    elif args.command == "run_tbbs2":
+        run_tbbs2(nodes)
     elif args.command == "run_exp":
         run_exp(nodes["node0"])
     elif args.command == "copy_op":

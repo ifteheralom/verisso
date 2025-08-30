@@ -205,11 +205,11 @@ async fn main() -> tokio::io::Result<()> {
     println!("Listening on {}", listener.local_addr()?);
 
     // Sleep for a few seconds to allow all nodes to start
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     let main_stream = connect_to_peer("node0:8000").await?;
 
-    let signer = Arc::new(Mutex::new(Signer::new(node_id)));
+    let signer = Arc::new(Mutex::new(Signer::new((*config).clone())));
     let main_stream = Arc::new(Mutex::new(main_stream));
 
     handle_listener(listener, config, signer, main_stream).await?;

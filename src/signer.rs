@@ -1,4 +1,5 @@
 // use crate::constant::*;
+use crate::config::Config;
 use crate::constant::*;
 use crate::ot::do_pairwise_base_ot;
 use ark_bls12_381::Fr;
@@ -25,14 +26,18 @@ pub struct Signer {
 }
 
 impl Signer {
-    pub fn new(id: u16) -> Self {
+    pub fn new(config: Config) -> Self {
         Signer {
             rng: StdRng::seed_from_u64(0u64),
-            all_party_set: (1..=TOTAL_SIGNERS).into_iter().collect::<BTreeSet<_>>(),
+            all_party_set: (1..=config.total_nodes)
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
             // THRESHOLD_SIGNERS -> TOTAL_SIGNERS
-            threshold_party_set: (1..=THRESHOLD_SIGNERS).into_iter().collect::<BTreeSet<_>>(),
+            threshold_party_set: (1..=config.threshold_signers)
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
             protocol_id: b"test".to_vec(),
-            id: id,
+            id: config.node_id,
             sk_share: None,
         }
     }

@@ -1,5 +1,7 @@
 // Ref: https://github.com/docknetwork/crypto/tree/main/bbs_plus
 
+mod exp_utils;
+
 use crate::exp_utils::*;
 use ark_bls12_381::{Bls12_381, Fr};
 use ark_std::rand::{rngs::StdRng, SeedableRng};
@@ -9,7 +11,10 @@ use bbs_plus::setup::{KeypairG2, SecretKey, SignatureParams23G1};
 use blake2::Blake2b512;
 use dock_crypto_utils::signature::MessageOrBlinding;
 use schnorr_pok::compute_random_oracle_challenge;
+use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::File;
+use std::io::Write;
 use std::time::{Duration, Instant};
 
 pub fn setup_keys<R: rand::RngCore>(
@@ -89,8 +94,8 @@ pub fn verify_proof(
         .unwrap();
 }
 
-pub fn test_credential() {
-    let message_count = 15;
+pub fn test_credential(message_count: u32, revealed_indices_count: u32) -> (f64, f64) {
+    // let message_count = 15;
     let mut rng = StdRng::seed_from_u64(0u64);
     let params = SignatureParams23G1::<Bls12_381>::generate_using_rng(&mut rng, message_count);
 
@@ -121,6 +126,12 @@ pub fn test_credential() {
 
     // let fr_byte_size = Fr::default().serialized_size(Compress::No);
     // println!("Size of each Fr element: {} bytes", fr_byte_size);
+
+    // MSG COUNT = 20, 40, 60,
+    // REVEAL = 20, 40, 60, 80, 100
+    // 20: 4, 8, 12, 16, 20
+    // 40: 8, 16, 24, 32, 40
+    // 60: 12, 24, 36, 48, 60
 
     let mut revealed_indices = BTreeSet::new();
     revealed_indices.insert(0);
@@ -191,4 +202,112 @@ pub fn test_credential() {
         proof_gen_time,
         proof_verify_time
     );
+
+    (proof_gen_time, proof_verify_time)
+}
+
+pub fn run_exp() {
+    // let message_counts = vec![20, 40, 60];
+    // let revealed_indices_percentages = vec![20, 40, 60, 80, 100];
+    // for &msg_count in message_counts.iter() {
+    //     // 20%, 40%, 60%, 80%, 100%
+    //     let revealed_indices_count = revealed_indices_percentages
+    //         .iter()
+    //         .map(|&p| (msg_count * p) / 100)
+    //         .collect::<Vec<_>>();
+    //     for (i, &rev_count) in revealed_indices_count.iter().enumerate() {
+    //         let mut total_proof_gen_time = 0.0;
+    //         let mut total_proof_verify_time = 0.0;
+    //         let total_runs = 5;
+    //         for i in 0..total_runs {
+    //             let (proof_gen_time, proof_verify_time) = test_credential(msg_count, rev_count);
+    //             total_proof_gen_time += proof_gen_time;
+    //             total_proof_verify_time += proof_verify_time;
+    //         }
+    //         let avg_proof_gen_time = total_proof_gen_time / 5.0;
+    //         let avg_proof_verify_time = total_proof_verify_time / 5.0;
+
+    //         // Write to a file
+    //         let file_name = format!(
+    //             "./op/bbs_msg_{}_revealpercentage_{}.json",
+    //             msg_count, revealed_indices_percentages[i]
+    //         );
+    //         let json_data = json!({
+    //             "total_runs": total_runs,
+    //             "msg_count": msg_count,
+    //             "revealed_percentage": revealed_indices_percentages[i],
+    //             "revealed_count": rev_count,
+    //             "proof_gen_time": avg_proof_gen_time,
+    //             "proof_verify_time": avg_proof_verify_time,
+    //         });
+    //         let mut file = File::create(file_name).unwrap();
+    //         serde_json::to_writer_pretty(&mut file, &json_data).unwrap();
+    //     }
+    // }
+
+    // let msg_count = 60;
+    // let revealed_indices = [10, 20, 30, 40, 50];
+    // for (i, &rev_count) in revealed_indices.iter().enumerate() {
+    //     let mut total_proof_gen_time = 0.0;
+    //     let mut total_proof_verify_time = 0.0;
+    //     let total_runs = 5;
+    //     for i in 0..total_runs {
+    //         let (proof_gen_time, proof_verify_time) = test_credential(msg_count, rev_count);
+    //         total_proof_gen_time += proof_gen_time;
+    //         total_proof_verify_time += proof_verify_time;
+    //     }
+    //     let avg_proof_gen_time = total_proof_gen_time / 5.0;
+    //     let avg_proof_verify_time = total_proof_verify_time / 5.0;
+
+    //     // Write to a file
+    //     let file_name = format!(
+    //         "./op/bbs_runtime_msg_{}_revealcount_{}.json",
+    //         msg_count, rev_count
+    //     );
+    //     let json_data = json!({
+    //         "total_runs": total_runs,
+    //         "msg_count": msg_count,
+    //         // "revealed_percentage": revealed_indices_percentages[i],
+    //         "revealed_count": rev_count,
+    //         "proof_gen_time": avg_proof_gen_time,
+    //         "proof_verify_time": avg_proof_verify_time,
+    //     });
+    //     let mut file = File::create(file_name).unwrap();
+    //     serde_json::to_writer_pretty(&mut file, &json_data).unwrap();
+    // }
+
+    let msg_count = 15;
+    let revealed_indices = [5];
+    for (i, &rev_count) in revealed_indices.iter().enumerate() {
+        let mut total_proof_gen_time = 0.0;
+        let mut total_proof_verify_time = 0.0;
+        let total_runs = 5;
+        for i in 0..total_runs {
+            let (proof_gen_time, proof_verify_time) = test_credential(msg_count, rev_count);
+            total_proof_gen_time += proof_gen_time;
+            total_proof_verify_time += proof_verify_time;
+        }
+        let avg_proof_gen_time = total_proof_gen_time / 5.0;
+        let avg_proof_verify_time = total_proof_verify_time / 5.0;
+
+        // Write to a file
+        let file_name = format!(
+            "./op/bbs_runtime_msg_{}_revealcount_{}.json",
+            msg_count, rev_count
+        );
+        let json_data = json!({
+            "total_runs": total_runs,
+            "msg_count": msg_count,
+            // "revealed_percentage": revealed_indices_percentages[i],
+            "revealed_count": rev_count,
+            "proof_gen_time": avg_proof_gen_time,
+            "proof_verify_time": avg_proof_verify_time,
+        });
+        let mut file = File::create(file_name).unwrap();
+        serde_json::to_writer_pretty(&mut file, &json_data).unwrap();
+    }
+}
+
+pub fn main() {
+    run_exp();
 }

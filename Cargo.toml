@@ -50,5 +50,9 @@ name = "as"
 path = "src/auth_server.rs"
 
 [[bin]]
+name = "bbs_sign"
+path = "src/bbs_sign.rs"
+
+[[bin]]
 name = "client"
 path = "src/authentication_client.rs"

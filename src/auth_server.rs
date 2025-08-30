@@ -176,6 +176,7 @@ async fn main() -> tokio::io::Result<()> {
     // Save fields we need later before moving `config`
     let node_id = config.node_id;
     let total_nodes = config.total_nodes;
+    let threshold_signers = config.threshold_signers;
 
     let port = 8000;
 
@@ -183,13 +184,13 @@ async fn main() -> tokio::io::Result<()> {
     println!("Listening on {}", listener.local_addr()?);
 
     // Sleep for a few seconds to allow all nodes to start
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     let peers = Arc::new(Mutex::new(connect_to_peers(&node_id, &total_nodes).await));
 
     let auth_service = Arc::new(Mutex::new(AuthenticationService::init(
         config,
-        5,
+        threshold_signers,
         peers.clone(),
     )));
 
@@ -198,6 +199,9 @@ async fn main() -> tokio::io::Result<()> {
     let listener_fut = handle_listener(listener, auth_service_clone);
 
     auth_service.lock().await.share_sk_shares().await;
+
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    auth_service.lock().await.send_round1_request().await;
 
     listener_fut.await?;
     Ok(())

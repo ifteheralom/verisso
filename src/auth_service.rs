@@ -23,6 +23,7 @@ use oblivious_transfer_protocols::ot_based_multiplication::{
 };
 use oblivious_transfer_protocols::*;
 use rand::prelude::*;
+use rayon::vec;
 use secret_sharing_and_dkg::shamir_ss::deal_random_secret;
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
@@ -74,6 +75,7 @@ pub struct AuthenticationService {
     fn2_timer: Timer,
     token_issue_timer: Timer,
     token_verify_timer: Timer,
+    current_run: u32,
 }
 
 impl AuthenticationService {
@@ -86,9 +88,10 @@ impl AuthenticationService {
 
         let mut rng = StdRng::seed_from_u64(0u64);
 
-        let params = SignatureParams23G1::<Bls12_381>::generate_using_rng(&mut rng, MESSAGE_COUNT);
+        let params =
+            SignatureParams23G1::<Bls12_381>::generate_using_rng(&mut rng, config.message_count);
 
-        let messages = setup_messages(&mut rng, MESSAGE_COUNT);
+        let messages = setup_messages(&mut rng, config.message_count);
 
         // Add sk_shares logic
         let (public_key, _sk, sk_shares) =
@@ -109,6 +112,8 @@ impl AuthenticationService {
         let token_issue_timer = Timer::with_label("token_issue");
         let token_verify_timer = Timer::with_label("token_verify");
 
+        let current_run = config.current_run;
+
         Self {
             config,
             peers,
@@ -128,7 +133,34 @@ impl AuthenticationService {
             fn2_timer,
             token_issue_timer,
             token_verify_timer,
+            current_run,
         }
+    }
+
+    pub fn increment_current_run(&mut self) {
+        self.current_run += 1;
+    }
+
+    async fn on_complete(&mut self) {
+        let mut file = tokio::fs::File::create(format!(
+            "./op/tbbs_msg_{}_threshold_{}_current_run_{}.json",
+            self.config.message_count, self.threshold_signers, self.current_run
+        ))
+        .await
+        .unwrap();
+
+        let timings = json!({
+            "msg_count": self.config.message_count,
+            "fn1": self.fn1_timer.get_duration(),
+            "fn2": self.fn2_timer.get_duration(),
+            "token_issue": self.token_issue_timer.get_duration(),
+            "token_verify": self.token_verify_timer.get_duration(),
+        });
+        let json_str = serde_json::to_string_pretty(&timings).unwrap();
+        file.write_all(json_str.as_bytes()).await.unwrap();
+
+        // Exit the system
+        // std::process::exit(0);
     }
 
     pub async fn share_sk_shares(&mut self) {
@@ -164,6 +196,7 @@ impl AuthenticationService {
     }
 
     pub async fn send_round1_request(&mut self) {
+        println!("Sending round 1 request...");
         self.fn1_timer.start();
         let guard = self.peers.lock().await;
         for (_node_id, peer) in guard.iter() {
@@ -399,24 +432,28 @@ impl AuthenticationService {
             eprintln!("Signature verification failed: {:?}", err);
         } else {
             self.token_verify_timer.stop_and_print_ms();
+            self.on_complete().await;
             println!("Signature verified successfully");
         }
 
-        let now = SystemTime::now();
-        let timestamp = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let mut file = tokio::fs::File::create(format!("./op/timings_{}.json", timestamp))
-            .await
-            .unwrap();
+        // let now = SystemTime::now();
+        // let timestamp = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
+        // let mut file = tokio::fs::File::create(format!(
+        //     "./op/timings_{}_{}.json",
+        //     self.config.message_count, timestamp
+        // ))
+        // .await
+        // .unwrap();
 
-        let timings = json!({
-            "fn1": self.fn1_timer.get_duration(),
-            "fn2": self.fn2_timer.get_duration(),
-            "token_issue": self.token_issue_timer.get_duration(),
-            "token_verify": self.token_verify_timer.get_duration(),
-        });
-        file.write_all(timings.to_string().as_bytes())
-            .await
-            .unwrap();
+        // let timings = json!({
+        //     "fn1": self.fn1_timer.get_duration(),
+        //     "fn2": self.fn2_timer.get_duration(),
+        //     "token_issue": self.token_issue_timer.get_duration(),
+        //     "token_verify": self.token_verify_timer.get_duration(),
+        // });
+        // file.write_all(timings.to_string().as_bytes())
+        //     .await
+        //     .unwrap();
     }
 
     pub async fn process_round2_response(
