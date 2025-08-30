@@ -1,3 +1,5 @@
+(* User registration Phase *)
+
 set preciseActions = true.
 free c: channel.
 
@@ -35,10 +37,10 @@ event IssuedBlind(msg, nonce, pkey).
 event Unblinded(msg, msg, nonce, pkey, sig, nonce).
 event VerifiedVC(msg, msg, nonce, pkey, sig, nonce).
 
-(* Registry: published issuer keys available to holders. *)
+(* Registry: published issuer keys available to User_1s. *)
 table published(pkey).
 
-(* Issuer side *)
+(* IdP side *)
 let Issuer(sk: skey) =
   let PK = pk(sk) in
   insert published(PK);
@@ -51,8 +53,8 @@ let Issuer(sk: skey) =
     event IssuedBlind(bl, gamma, PK);
     out(c, (gamma, s_blind)).
 
-(* Holder side *)
-let Holder() =
+(* User_1 side *)
+let User_1() =
   in(c, PK: pkey) [precise];
   get published(=PK) in
     ! in(c, m: msg) [precise];
@@ -74,7 +76,7 @@ let Holder() =
 query m: msg, us: msg, gamma: nonce, PK: pkey, s: sig, d: nonce;
       event(VerifiedVC(m, us, gamma, PK, s, d)) ==> event(IssuedBlind(blind(pair(m,us), d), gamma, PK)).
 
-(* Holder originally requested the VC, Audit *)
+(* User_1 originally requested the VC, Audit *)
 query m: msg, us: msg, gamma: nonce, PK: pkey, s: sig, d: nonce;
       event(VerifiedVC(m, us, gamma, PK, s, d)) ==> event(Requested(m, us, d)).
 
@@ -85,7 +87,7 @@ query m: msg, us: msg, gamma: nonce, PK: pkey, s: sig, d: nonce;
 (* Secrecy of the secret key *)
 not attacker(new sk).
 
-(* Composition: one issuer and an unbounded number of holder sessions. *)
+(* Composition: one issuer and an unbounded number of User_1 sessions. *)
 process
   new sk: skey;
-  ( Issuer(sk) | Holder() )
+  ( Issuer(sk) | User_1() )

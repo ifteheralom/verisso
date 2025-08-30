@@ -1,3 +1,5 @@
+(* User authetication Phase *)
+
 free c: channel.
 
 type signer.
@@ -43,7 +45,7 @@ event AskedPart(msg, signer).
 event PartialSigned(signer, msg, pkey, psig).
 event Combined(msg, pkey, sig, signer, signer).
 event VerifiedToken(msg, pkey, sig, signer, signer).
-event TokenPrepared(msg, pnym, zkp, nonce).
+event PresPrepared(msg, pnym, zkp, nonce).
 
 (* Signers: take (T, S_i, T_ac); later, after (=T_ac, S_i), sign T *)
 let Signer1(sk1: skshare, sk2: skshare, sk3: skshare) =
@@ -82,15 +84,15 @@ let Signer3(sk1: skshare, sk2: skshare, sk3: skshare) =
         event PartialSigned(S3, T, PK, ps3);
         out(c, (S3, T, ps3)).
 
-(* Holder *)
-let TokenPreparer() =
+(* User_1 *)
+let PresPreparer() =
   ! in(c, (cv: nonce, r: rpid));
     in(c, m: msg);
     let ny = nym(r) in
     let pi = zk_prove(r, m, cv) in
     let T = tok(m, ny, pi, cv) in
     new T_ac: nonce;
-    event TokenPrepared(m, ny, pi, cv);
+    event PresPrepared(m, ny, pi, cv);
     out(c, (T, S1, T_ac));
     out(c, (T, S2, T_ac));
     out(c, (T, S3, T_ac));
@@ -168,7 +170,7 @@ query T: msg, PK: pkey, s: sig, ps: psig;
       inj-event(VerifiedToken(T, PK, s, S2, S3)) ==> inj-event(PartialSigned(S3, T, PK, ps)).
 
 query m: msg, ny: pnym, pi: zkp, cv: nonce, PK: pkey, s: sig, g1: signer, g2: signer;
-      event(VerifiedToken(tok(m, ny, pi, cv), PK, s, g1, g2)) ==> event(TokenPrepared(m, ny, pi, cv)).
+      event(VerifiedToken(tok(m, ny, pi, cv), PK, s, g1, g2)) ==> event(PresPrepared(m, ny, pi, cv)).
 
 query T: msg, PK: pkey, s: sig, g1: signer, g2: signer;
       event(VerifiedToken(T, PK, s, g1, g2)) ==> event(PublishedPK(PK)).
@@ -187,6 +189,6 @@ process
   ( !Signer1(sk1, sk2, sk3)
   | !Signer2(sk1, sk2, sk3)
   | !Signer3(sk1, sk2, sk3)
-  | !TokenPreparer()
+  | !PresPreparer()
   | Verifier12(PK) | Verifier13(PK) | Verifier23(PK)
   )
