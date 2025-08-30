@@ -387,18 +387,20 @@ impl AuthenticationService {
             )
             .unwrap();
             shares.push(share);
+            if i == self.threshold_signers {
+                self.token_issue_timer.stop_and_print_ms();
+            }
         }
 
         let sig = BBSSignatureShare::aggregate(shares).unwrap();
-        self.token_issue_timer.stop_and_print_ms();
 
         self.token_verify_timer.start();
         if let Err(err) = sig.verify(&self.messages, self.public_key.clone(), self.params.clone()) {
             eprintln!("Signature verification failed: {:?}", err);
         } else {
+            self.token_verify_timer.stop_and_print_ms();
             println!("Signature verified successfully");
         }
-        self.token_verify_timer.stop_and_print_ms();
 
         let now = SystemTime::now();
         let timestamp = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
