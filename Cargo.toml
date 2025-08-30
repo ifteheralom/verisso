@@ -34,6 +34,7 @@ itertools = "0.13.0"
 secret_sharing_and_dkg = "0.14.0"
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
+base64 = "0.22.1"
 
 [dependencies.ark-serialize]
 version = "^0.4.2"
@@ -41,8 +42,12 @@ default-features = false
 features = ["derive"]
 
 [[bin]]
+name = "signer"
+path = "src/signer_server.rs"
+
+[[bin]]
 name = "as"
-path = "src/authentication_server.rs"
+path = "src/auth_server.rs"
 
 [[bin]]
 name = "client"

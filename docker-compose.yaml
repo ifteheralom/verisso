@@ -1,4 +1,16 @@
 services:
+  node0:
+    image: as/node
+    container_name: node0
+    ports:
+      - "8000:8000"
+    environment:
+      - NODE_ID=0
+    env_file: .env
+    command: /app/as
+    volumes:
+      - ./op:/app/op
+
   node1:
     image: as/node
     container_name: node1
@@ -6,11 +18,8 @@ services:
       - "8001:8001"
     environment:
       - NODE_ID=1
-    # command: /app/as
     env_file: .env
-    # privileged: true
-    # volumes:
-    #   - .:/app
+    command: /app/signer
 
   node2:
     image: as/node
@@ -19,11 +28,8 @@ services:
       - "8002:8002"
     environment:
       - NODE_ID=2
-    # command: /app/as
     env_file: .env
-    # privileged: true
-    # volumes:
-    #   - .:/app
+    command: /app/signer
 
   node3:
     image: as/node
@@ -32,11 +38,8 @@ services:
       - "8003:8003"
     environment:
       - NODE_ID=3
-    # command: /app/as
     env_file: .env
-    # privileged: true
-    # volumes:
-    #   - .:/app
+    command: /app/signer
 
   node4:
     image: as/node
@@ -45,11 +48,8 @@ services:
       - "8004:8004"
     environment:
       - NODE_ID=4
-    # command: /app/as
     env_file: .env
-    # privileged: true
-    # volumes:
-    #   - .:/app
+    command: /app/signer
 
   node5:
     image: as/node
@@ -58,11 +58,8 @@ services:
       - "8005:8005"
     environment:
       - NODE_ID=5
-    # command: /app/as
     env_file: .env
-    # privileged: true
-    # volumes:
-    #   - .:/app
+    command: /app/signer
 
   node6:
     image: as/node
@@ -71,11 +68,8 @@ services:
       - "8006:8006"
     environment:
       - NODE_ID=6
-    # command: /app/as
     env_file: .env
-    # privileged: true
-    # volumes:
-    #   - .:/app
+    command: /app/signer
 
   node7:
     image: as/node
@@ -84,50 +78,44 @@ services:
       - "8007:8007"
     environment:
       - NODE_ID=7
-    # command: /app/as
     env_file: .env
-    # privileged: true
-    # volumes:
-    #   - .:/app
+    command: /app/signer
 
-  node8:
-    image: as/node
-    container_name: node8
-    ports:
-      - "8008:8008"
-    environment:
-      - NODE_ID=8
-    # command: /app/as
-    env_file: .env
-    # privileged: true
-    # volumes:
-    #   - .:/app
+  # node8:
+  #   image: as/node
+  #   container_name: node8
+  #   ports:
+  #     - "8008:8008"
+  #   environment:
+  #     - NODE_ID=8
+  #   env_file: .env
+  #   command: /app/signer
 
-  node9:
-    image: as/node
-    container_name: node9
-    ports:
-      - "8009:8009"
-    environment:
-      - NODE_ID=9
-    # command: /app/as
-    env_file: .env
-    # privileged: true
-    # volumes:
-    #   - .:/app
+  # node9:
+  #   image: as/node
+  #   container_name: node9
+  #   ports:
+  #     - "8009:8009"
+  #   environment:
+  #     - NODE_ID=9
+  #   # command: /app/as
+  #   env_file: .env
+  #   # privileged: true
+  #   # volumes:
+  #   #   - .:/app
 
-  node10:
-    image: as/node
-    container_name: node10
-    ports:
-      - "8010:8010"
-    environment:
-      - NODE_ID=10
-    # command: /app/as
-    env_file: .env
-    # privileged: true
-    # volumes:
-    #   - .:/app
+  # node10:
+  #   image: as/node
+  #   container_name: node10
+  #   ports:
+  #     - "8010:8010"
+  #   environment:
+  #     - NODE_ID=10
+  #   # command: /app/as
+  #   env_file: .env
+  #   # privileged: true
+  #   # volumes:
+  #   #   - .:/app
 
 networks:
   default:
