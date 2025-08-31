@@ -2,6 +2,9 @@
 mod tbbs_sign;
 mod ot;
 mod exp_utils;
+mod signer;
+mod constant;
+mod config;
 
 const HTML_DIR: &str = "html";
 

@@ -1,0 +1,194 @@
+(* User authetication Phase *)
+
+free c: channel.
+
+type signer.
+const S1, S2, S3: signer.
+type skshare.
+type pkey.
+type msg.
+type nonce.
+type psig.
+type sig.
+type rpid.
+type pnym.
+type zkp.
+const ok, bad: bitstring.
+
+fun pkT(skshare, skshare, skshare): pkey.
+fun tok(msg, pnym, zkp, nonce): msg [data].
+fun nym(rpid): pnym.
+fun combine12(psig, psig): sig.
+fun combine13(psig, psig): sig.
+fun combine23(psig, psig): sig.
+
+fun zk_prove(rpid, msg, nonce): zkp [private].
+fun psign1(msg, skshare, nonce): psig [private].
+fun psign2(msg, skshare, nonce): psig [private].
+fun psign3(msg, skshare, nonce): psig [private].
+
+(* Correctness / destructors *)
+reduc forall r: rpid, m: msg, cv: nonce;
+  zk_verify(zk_prove(r, m, cv), nym(r), m, cv) = ok.
+
+reduc forall T: msg, r1: nonce, r2: nonce, sk1: skshare, sk2: skshare, sk3: skshare;
+  thr_verify12(combine12(psign1(T, sk1, r1), psign2(T, sk2, r2)), T, pkT(sk1, sk2, sk3)) = ok.
+
+reduc forall T: msg, r1: nonce, r3: nonce, sk1: skshare, sk2: skshare, sk3: skshare;
+  thr_verify13(combine13(psign1(T, sk1, r1), psign3(T, sk3, r3)), T, pkT(sk1, sk2, sk3)) = ok.
+
+reduc forall T: msg, r2: nonce, r3: nonce, sk1: skshare, sk2: skshare, sk3: skshare;
+  thr_verify23(combine23(psign2(T, sk2, r2), psign3(T, sk3, r3)), T, pkT(sk1, sk2, sk3)) = ok.
+
+event PublishedPK(pkey).
+event AskedPart(msg, signer).
+event PartialSigned(signer, msg, pkey, psig).
+event Combined(msg, pkey, sig, signer, signer).
+event VerifiedToken(msg, pkey, sig, signer, signer).
+event PresPrepared(msg, pnym, zkp, nonce).
+
+(* Signers: take (T, S_i, T_ac); later, after (=T_ac, S_i), sign T *)
+let Signer1(sk1: skshare, sk2: skshare, sk3: skshare) =
+  let PK = pkT(sk1, sk2, sk3) in
+  ! in(c, (T: msg, who: signer, T_ac: nonce));
+    if who = S1 then
+      in(c, (=T_ac, who2: signer));
+      if who2 = S1 then
+        event AskedPart(T, S1);
+        new r1: nonce;
+        let ps1 = psign1(T, sk1, r1) in
+        event PartialSigned(S1, T, PK, ps1);
+        out(c, (S1, T, ps1)).
+
+let Signer2(sk1: skshare, sk2: skshare, sk3: skshare) =
+  let PK = pkT(sk1, sk2, sk3) in
+  ! in(c, (T: msg, who: signer, T_ac: nonce));
+    if who = S2 then
+      in(c, (=T_ac, who2: signer));
+      if who2 = S2 then
+        event AskedPart(T, S2);
+        new r2: nonce;
+        let ps2 = psign2(T, sk2, r2) in
+        event PartialSigned(S2, T, PK, ps2);
+        out(c, (S2, T, ps2)).
+
+let Signer3(sk1: skshare, sk2: skshare, sk3: skshare) =
+  let PK = pkT(sk1, sk2, sk3) in
+  ! in(c, (T: msg, who: signer, T_ac: nonce));
+    if who = S3 then
+      in(c, (=T_ac, who2: signer));
+      if who2 = S3 then
+        event AskedPart(T, S3);
+        new r3: nonce;
+        let ps3 = psign3(T, sk3, r3) in
+        event PartialSigned(S3, T, PK, ps3);
+        out(c, (S3, T, ps3)).
+
+(* User_1 *)
+let PresPreparer() =
+  ! in(c, (cv: nonce, r: rpid));
+    in(c, m: msg);
+    let ny = nym(r) in
+    let pi = zk_prove(r, m, cv) in
+    let T = tok(m, ny, pi, cv) in
+    new T_ac: nonce;
+    event PresPrepared(m, ny, pi, cv);
+    out(c, (T, S1, T_ac));
+    out(c, (T, S2, T_ac));
+    out(c, (T, S3, T_ac));
+    out(c, T_ac).
+
+(* Verifiers for each 2-of-3 pair *)
+let Verifier12(PK: pkey) =
+  ! new cv: nonce;
+    new r: rpid;
+    out(c, (cv, r));
+    in(c, T_ac: nonce);
+    out(c, (T_ac, S1));
+    out(c, (T_ac, S2));
+    in(c, (=S1, T1: msg, ps1: psig));
+    in(c, (=S2, =T1, ps2: psig));
+    let tok(m1: msg, =nym(r), pi1: zkp, =cv) = T1 in
+    if zk_verify(pi1, nym(r), m1, cv) = ok then
+      let s = combine12(ps1, ps2) in
+      if thr_verify12(s, T1, PK) = ok then
+        event Combined(T1, PK, s, S1, S2);
+        event VerifiedToken(T1, PK, s, S1, S2);
+        out(c, ok) else out(c, bad)
+    else out(c, bad).
+
+let Verifier13(PK: pkey) =
+  ! new cv: nonce;
+    new r: rpid;
+    out(c, (cv, r));
+    in(c, T_ac: nonce);
+    out(c, (T_ac, S1));
+    out(c, (T_ac, S3));
+    in(c, (=S1, T1: msg, ps1: psig));
+    in(c, (=S3, =T1, ps3: psig));
+    let tok(m1: msg, =nym(r), pi1: zkp, =cv) = T1 in
+    if zk_verify(pi1, nym(r), m1, cv) = ok then
+      let s = combine13(ps1, ps3) in
+      if thr_verify13(s, T1, PK) = ok then
+        event Combined(T1, PK, s, S1, S3);
+        event VerifiedToken(T1, PK, s, S1, S3);
+        out(c, ok) else out(c, bad)
+    else out(c, bad).
+
+let Verifier23(PK: pkey) =
+  ! new cv: nonce;
+    new r: rpid;
+    out(c, (cv, r));
+    in(c, T_ac: nonce);
+    out(c, (T_ac, S2));
+    out(c, (T_ac, S3));
+    in(c, (=S2, T1: msg, ps2: psig));
+    in(c, (=S3, =T1, ps3: psig));
+    let tok(m1: msg, =nym(r), pi1: zkp, =cv) = T1 in
+    if zk_verify(pi1, nym(r), m1, cv) = ok then
+      let s = combine23(ps2, ps3) in
+      if thr_verify23(s, T1, PK) = ok then
+        event Combined(T1, PK, s, S2, S3);
+        event VerifiedToken(T1, PK, s, S2, S3);
+        out(c, ok) else out(c, bad)
+    else out(c, bad).
+
+(* Security goals *)
+query T: msg, PK: pkey, s: sig, ps: psig;
+      inj-event(VerifiedToken(T, PK, s, S1, S2)) ==> inj-event(PartialSigned(S1, T, PK, ps)).
+query T: msg, PK: pkey, s: sig, ps: psig;
+      inj-event(VerifiedToken(T, PK, s, S1, S2)) ==> inj-event(PartialSigned(S2, T, PK, ps)).
+
+query T: msg, PK: pkey, s: sig, ps: psig;
+      inj-event(VerifiedToken(T, PK, s, S1, S3)) ==> inj-event(PartialSigned(S1, T, PK, ps)).
+query T: msg, PK: pkey, s: sig, ps: psig;
+      inj-event(VerifiedToken(T, PK, s, S1, S3)) ==> inj-event(PartialSigned(S3, T, PK, ps)).
+
+query T: msg, PK: pkey, s: sig, ps: psig;
+      inj-event(VerifiedToken(T, PK, s, S2, S3)) ==> inj-event(PartialSigned(S2, T, PK, ps)).
+query T: msg, PK: pkey, s: sig, ps: psig;
+      inj-event(VerifiedToken(T, PK, s, S2, S3)) ==> inj-event(PartialSigned(S3, T, PK, ps)).
+
+query m: msg, ny: pnym, pi: zkp, cv: nonce, PK: pkey, s: sig, g1: signer, g2: signer;
+      event(VerifiedToken(tok(m, ny, pi, cv), PK, s, g1, g2)) ==> event(PresPrepared(m, ny, pi, cv)).
+
+query T: msg, PK: pkey, s: sig, g1: signer, g2: signer;
+      event(VerifiedToken(T, PK, s, g1, g2)) ==> event(PublishedPK(PK)).
+
+not attacker(new sk1).
+not attacker(new sk2).
+not attacker(new sk3).
+
+process
+  new sk1: skshare;
+  new sk2: skshare;
+  new sk3: skshare;
+  let PK = pkT(sk1, sk2, sk3) in
+  event PublishedPK(PK);
+  out(c, PK);
+  ( !Signer1(sk1, sk2, sk3)
+  | !Signer2(sk1, sk2, sk3)
+  | !Signer3(sk1, sk2, sk3)
+  | !PresPreparer()
+  | Verifier12(PK) | Verifier13(PK) | Verifier23(PK)
+  )

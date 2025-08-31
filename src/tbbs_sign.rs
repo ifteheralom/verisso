@@ -203,7 +203,6 @@ pub fn test_token() {
 
     let all_party_set = (1..=TOTAL_SIGNERS).into_iter().collect::<BTreeSet<_>>();
     let threshold_party_set = (1..=THRESHOLD_SIGNERS).into_iter().collect::<BTreeSet<_>>();
-
     let messages = setup_messages(&mut rng, message_count);
     let (public_key, sk, sk_shares) =
         trusted_party_keygen(&mut rng, THRESHOLD_SIGNERS, TOTAL_SIGNERS, params.clone());
@@ -345,6 +344,7 @@ pub fn test_token() {
     token_issue_time = get_as_millis(elapsed.unwrap());
 
     mTimer.start();
+
     sig.verify(&messages, public_key.clone(), params.clone())
         .unwrap();
     elapsed = mTimer.stop();
