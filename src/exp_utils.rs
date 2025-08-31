@@ -1,8 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet};
 use ark_bls12_381::{Bls12_381, Fr};
 use ark_std::UniformRand;
 use bbs_plus::prelude::{KeypairG2, SignatureParams23G1};
 use rand::RngCore;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -15,6 +15,7 @@ pub fn get_as_millis(duration: Duration) -> f64 {
 pub struct Timer {
     label: Option<String>,
     start_time: Arc<Mutex<Option<Instant>>>,
+    duration: Arc<Mutex<Option<f64>>>,
 }
 
 impl Timer {
@@ -23,6 +24,7 @@ impl Timer {
         Timer {
             label: None,
             start_time: Arc::new(Mutex::new(None)),
+            duration: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -30,6 +32,7 @@ impl Timer {
         Timer {
             label: Some(label.into()),
             start_time: Arc::new(Mutex::new(None)),
+            duration: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -48,6 +51,10 @@ impl Timer {
         if let Some(start_time) = *time {
             let elapsed = start_time.elapsed();
             *time = None; // Reset the timer
+            self.duration
+                .lock()
+                .unwrap()
+                .replace(get_as_millis(elapsed));
             Some(elapsed)
         } else {
             None // Timer was not started
@@ -62,13 +69,26 @@ impl Timer {
             } else {
                 println!("{:.2} ms", ms);
             }
+            self.duration.lock().unwrap().replace(ms);
         });
+    }
+
+    pub fn get_duration(&self) -> f64 {
+        let duration = self.duration.lock().unwrap();
+        duration.unwrap_or(0.0)
+    }
+
+    pub fn reset(&self) {
+        let mut time = self.start_time.lock().unwrap();
+        *time = None;
+        let mut duration = self.duration.lock().unwrap();
+        *duration = None;
     }
 }
 
 pub fn measure_time<T, F>(operation: F) -> (T, std::time::Duration)
-    where
-        F: FnOnce() -> T,
+where
+    F: FnOnce() -> T,
 {
     let start = Instant::now();
     let result = operation();
@@ -76,13 +96,8 @@ pub fn measure_time<T, F>(operation: F) -> (T, std::time::Duration)
     (result, elapsed)
 }
 
-pub fn setup_messages<R: rand::RngCore>(
-    rng: &mut R,
-    message_count: u32
-) -> Vec<Fr> {
-    let messages: Vec<Fr> = (0..message_count).map(|_| {
-        Fr::rand(rng)
-    }).collect();
+pub fn setup_messages<R: rand::RngCore>(rng: &mut R, message_count: u32) -> Vec<Fr> {
+    let messages: Vec<Fr> = (0..message_count).map(|_| Fr::rand(rng)).collect();
     return messages;
 }
 
